@@ -9,6 +9,30 @@ template $GradiaBackgroundSelector: Adw.Bin {
       margin-bottom: 12;
     }
 
+    Box preset_box {
+      orientation: horizontal;
+      spacing: 6;
+      margin-bottom: 12;
+
+      DropDown preset_dropdown {
+        hexpand: true;
+        tooltip-text: _("Background Preset");
+
+        notify::selected => $_on_preset_dropdown_changed();
+      }
+
+      MenuButton preset_menu_button {
+        icon-name: "view-more-symbolic";
+        tooltip-text: _("Manage Presets");
+        valign: center;
+        menu-model: preset_menu;
+
+        styles [
+          "flat",
+        ]
+      }
+    }
+
     $GradiaToggleGroup toggle_group {
        notify::active-name => $_on_group_changed();
     }
@@ -28,3 +52,28 @@ template $GradiaBackgroundSelector: Adw.Bin {
   };
 }
 
+menu preset_menu {
+  section {
+    item {
+      label: _("_New Preset");
+      action: "preset.new";
+    }
+
+    item {
+      label: _("_Duplicate Preset");
+      action: "preset.duplicate";
+    }
+
+    item {
+      label: _("_Rename Preset…");
+      action: "preset.rename";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Delete Preset");
+      action: "preset.delete";
+    }
+  }
+}

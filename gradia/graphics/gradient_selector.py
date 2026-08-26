@@ -67,6 +67,12 @@ class GradientSelector(Adw.PreferencesGroup):
         self._set_widget_properties_from_gradient(gradient)
         self._notify()
 
+    def set_gradient(self, gradient: Gradient) -> None:
+        """Load a gradient chosen outside of this selector (a background preset)."""
+        self.gradient_background.gradient = gradient
+        self._set_widget_properties_from_gradient(gradient)
+        self.step_dialog_button.set_gradient(gradient)
+
     def on_step_gradient_changed(self, gradient: Gradient):
         self._set_widget_properties_from_gradient(gradient)
         self._notify()
