@@ -30,6 +30,16 @@
       <summary>If images with same colored edges should be balanced</summary>
     </key>
 
+    <key name="background-presets" type="s">
+      <default>''</default>
+      <summary>Serialized list of background presets</summary>
+      <description>JSON array of named background presets, each holding a mode, the solid/gradient/image state and the image options</description>
+    </key>
+    <key name="background-preset-index" type="i">
+      <default>0</default>
+      <summary>Index of the selected background preset</summary>
+    </key>
+
     <key name="background-mode" type="s">
       <default>'none'</default>
       <summary>The selected background mode</summary>

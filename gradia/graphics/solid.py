@@ -263,6 +263,20 @@ class SolidSelector(Adw.PreferencesGroup):
                              abs(self.custom_alpha - current_alpha) < 0.01)
             self.color_picker_button.set_selected(is_custom_match)
 
+    def refresh_from_background(self) -> None:
+        """Re-sync the checkmarks after the backing SolidBackground was changed elsewhere."""
+        current_color = self.solid.color.lower()
+        matches_preset = any(
+            button.color.lower() == current_color and abs(button.alpha - self.solid.alpha) < 0.01
+            for button in self.preset_buttons
+        )
+        if not matches_preset:
+            # A colour that is not one of the swatches belongs to the picker button.
+            self.custom_color = self.solid.color
+            self.custom_alpha = self.solid.alpha
+
+        self._update_selected_preset()
+
     def _on_color_picker_clicked(self, button: ColorPickerButton) -> None:
         button.open_color_picker()
 

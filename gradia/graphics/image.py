@@ -16,6 +16,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import io
+import json
 import os
 import tempfile
 import threading
@@ -51,6 +52,28 @@ class ImageBackground(Background):
                 self.load_image(str(self.SAVED_IMAGE_PATH))
             elif PRESET_IMAGES:
                 self.load_image(PRESET_IMAGES[0])
+
+    @classmethod
+    def from_json(cls, json_str: str) -> 'ImageBackground':
+        try:
+            data = json.loads(json_str or "{}")
+        except (ValueError, TypeError):
+            data = {}
+
+        file_path = data.get("file_path") if isinstance(data, dict) else None
+        if file_path:
+            try:
+                return cls(file_path)
+            except Exception as e:
+                print(f"Could not restore background image {file_path}: {e}")
+
+        return cls()
+
+    def to_json(self) -> str:
+        return json.dumps({
+            "type": "image",
+            "file_path": self.file_path or ""
+        })
 
     def load_image(self, path: str) -> None:
         self.file_path = path
@@ -225,6 +248,11 @@ class ImageSelector(Adw.PreferencesGroup):
 
         GLib.timeout_add(100, cleanup_temp_file)
         return False
+
+    def set_image_path(self, file_path: str) -> None:
+        """Load an image chosen outside of this selector (a background preset)."""
+        if file_path and file_path != self.image_background.file_path:
+            self._load_image_async(file_path)
 
     def _load_image_async(self, file_path: str) -> None:
         def load_in_background():

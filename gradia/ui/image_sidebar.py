@@ -82,6 +82,10 @@ class ImageSidebar(Adw.Bin):
 
         self._setup_widgets()
         self._connect_signals()
+        self.background_selector.set_image_options_hooks(
+            self._get_preset_image_options,
+            self._apply_preset_image_options,
+        )
 
     def _setup_widgets(self) -> None:
         self.padding_adjustment.set_value(self.settings.image_padding)
@@ -99,6 +103,7 @@ class ImageSidebar(Adw.Bin):
     def _on_aspect_ratio_changed(self, widget, ratio) -> None:
         if not self._updating_widgets:
             self.settings.image_aspect_ratio = ratio
+            self.background_selector.save_active_preset()
             self._notify_image_options_changed()
 
     def _connect_signals(self) -> None:
@@ -113,24 +118,28 @@ class ImageSidebar(Adw.Bin):
         if not self._updating_widgets:
             value = int(widget.get_value())
             self.settings.image_padding = value
+            self.background_selector.save_active_preset()
             self._notify_image_options_changed()
 
     def _on_corner_radius_changed(self, widget) -> None:
         if not self._updating_widgets:
             value = int(widget.get_value())
             self.settings.image_corner_radius = value
+            self.background_selector.save_active_preset()
             self._notify_image_options_changed()
 
     def _on_shadow_strength_changed(self, widget) -> None:
         if not self._updating_widgets:
             value = int(widget.get_value())
             self.settings.image_shadow_strength = value
+            self.background_selector.save_active_preset()
             self._notify_image_options_changed()
 
     def _on_auto_balance_changed(self, widget, pspec) -> None:
         if not self._updating_widgets:
             value = widget.get_active()
             self.settings.image_auto_balance = value
+            self.background_selector.save_active_preset()
             self._notify_image_options_changed()
 
     def _on_rotate_left_clicked(self, button: Gtk.Button) -> None:
@@ -147,6 +156,41 @@ class ImageSidebar(Adw.Bin):
         self._current_rotation = 0
         self.settings.image_rotation = 0
         self._notify_image_options_changed()
+
+    """
+    Background Preset Hooks
+    """
+
+    def _get_preset_image_options(self) -> dict:
+        """Snapshot the image options for storage in a background preset."""
+        return {
+            "padding": int(self.padding_adjustment.get_value()),
+            "corner_radius": int(self.corner_radius_adjustment.get_value()),
+            "aspect_ratio": self.aspect_ratio_selector.get_ratio(),
+            "shadow_strength": int(self.shadow_strength_scale.get_value()),
+            "auto_balance": self.auto_balance_toggle.get_active(),
+        }
+
+    def _apply_preset_image_options(self, options: dict) -> None:
+        """Restore the image options of a background preset without re-triggering a save."""
+        was_updating = self._updating_widgets
+        self._updating_widgets = True
+        try:
+            self.settings.image_padding = int(options["padding"])
+            self.settings.image_corner_radius = int(options["corner_radius"])
+            self.settings.image_aspect_ratio = str(options["aspect_ratio"])
+            self.settings.image_shadow_strength = int(options["shadow_strength"])
+            self.settings.image_auto_balance = bool(options["auto_balance"])
+
+            self.padding_adjustment.set_value(self.settings.image_padding)
+            self.corner_radius_adjustment.set_value(self.settings.image_corner_radius)
+            self.shadow_strength_scale.set_value(self.settings.image_shadow_strength)
+            self.auto_balance_toggle.set_active(self.settings.image_auto_balance)
+            self.aspect_ratio_selector.set_ratio(self.settings.image_aspect_ratio)
+        except (KeyError, TypeError, ValueError) as e:
+            print(f"Skipping malformed image options in preset: {e}")
+        finally:
+            self._updating_widgets = was_updating
 
     def _get_current_options(self) -> ImageOptions:
         return ImageOptions(

@@ -181,6 +181,22 @@ class Settings:
         self._settings.set_string("background-mode", value)
 
     @property
+    def background_presets(self) -> str:
+        return self._settings.get_string("background-presets")
+
+    @background_presets.setter
+    def background_presets(self, value: str) -> None:
+        self._settings.set_string("background-presets", value)
+
+    @property
+    def background_preset_index(self) -> int:
+        return self._settings.get_int("background-preset-index")
+
+    @background_preset_index.setter
+    def background_preset_index(self, value: int) -> None:
+        self._settings.set_int("background-preset-index", value)
+
+    @property
     def solid_state(self) -> str:
         return self._settings.get_string("solid-state")
 
