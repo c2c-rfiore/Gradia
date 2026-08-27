@@ -16,6 +16,8 @@ template $GradiaDrawingToolsGroup: Box {
   }
 
   MenuButton color_button {
+    // Open upward: the bar sits at the bottom of the editor.
+    direction: up;
     tooltip-text: _("Color");
     popover: color_popover;
 
@@ -36,6 +38,8 @@ template $GradiaDrawingToolsGroup: Box {
   }
 
   MenuButton size_button {
+    // Open upward: the bar sits at the bottom of the editor.
+    direction: up;
     icon-name: "line-large-circle-outline-symbolic";
     tooltip-text: _("Size");
     popover: size_popover;
@@ -51,6 +55,8 @@ template $GradiaDrawingToolsGroup: Box {
     reveal-child: false;
 
     child: MenuButton options_button {
+      // Open upward: the bar sits at the bottom of the editor.
+      direction: up;
       icon-name: "settings-symbolic";
       tooltip-text: _("Tool Options");
       popover: options_popover;
@@ -63,8 +69,6 @@ template $GradiaDrawingToolsGroup: Box {
 }
 
 Popover color_popover {
-  // Open upward: the bar sits at the bottom of the editor.
-  position: top;
   child: Box {
     margin-top: 6;
     margin-bottom: 6;
@@ -78,8 +82,6 @@ Popover color_popover {
 }
 
 Popover size_popover {
-  // Open upward: the bar sits at the bottom of the editor.
-  position: top;
   child: Box {
     orientation: vertical;
     spacing: 6;
@@ -116,8 +118,6 @@ Popover size_popover {
 }
 
 Popover options_popover {
-  // Open upward: the bar sits at the bottom of the editor.
-  position: top;
   child: Stack extra_stack {
     transition-type: crossfade;
     transition-duration: 200;

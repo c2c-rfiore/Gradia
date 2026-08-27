@@ -35,7 +35,7 @@ template $GradiaImageSidebar: Adw.Bin {
     }
 
     content: ScrolledWindow {
-      child: Box {
+      child: Box content_box {
         orientation: vertical;
         margin-start: 12;
         margin-end: 12;
@@ -44,11 +44,18 @@ template $GradiaImageSidebar: Adw.Bin {
         valign: start;
         spacing: 12;
 
-        Adw.PreferencesGroup background_selector_group {}
+        MenuButton preset_button {
+          tooltip-text: _("Background Preset");
+          always-show-arrow: true;
+
+          styles [
+            "preset-menu-button",
+          ]
+        }
 
         Adw.PreferencesGroup image_options_group {
           Adw.ExpanderRow image_options_expander {
-            title: _("Image Options");
+            title: _("Options");
             expanded: true;
 
             Adw.SpinRow padding_row {

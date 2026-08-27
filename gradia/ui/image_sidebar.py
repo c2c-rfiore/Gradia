@@ -40,7 +40,7 @@ class ImageOptions:
 class ImageSidebar(Adw.Bin):
     __gtype_name__ = "GradiaImageSidebar"
 
-    background_selector_group: Adw.PreferencesGroup = Gtk.Template.Child()
+    content_box: Gtk.Box = Gtk.Template.Child()
     image_options_group = Gtk.Template.Child()
     padding_row: Adw.SpinRow = Gtk.Template.Child()
     padding_adjustment: Gtk.Adjustment = Gtk.Template.Child()
@@ -58,6 +58,7 @@ class ImageSidebar(Adw.Bin):
     aspect_ratio_selector: AspectRatioSelector = Gtk.Template.Child()
     image_options_expander: Adw.ExpanderRow = Gtk.Template.Child()
     file_info_expander: Adw.ExpanderRow = Gtk.Template.Child()
+    preset_button: Gtk.MenuButton = Gtk.Template.Child()
     rotation_row: Adw.ActionRow = Gtk.Template.Child()
     padding_slider_row: Adw.ActionRow = Gtk.Template.Child()
     corner_radius_slider_row: Adw.ActionRow = Gtk.Template.Child()
@@ -81,7 +82,9 @@ class ImageSidebar(Adw.Bin):
         )
         self.background_selector.set_current_mode_callback(self._on_background_mode_changed)
 
-        self.background_selector_group.add(self.background_selector)
+        # Straight into the sidebar column, so its sections line up with the rest.
+        self.content_box.insert_child_after(self.background_selector, self.preset_button)
+        self.background_selector.attach_preset_button(self.preset_button)
 
         self._setup_widgets()
         self._connect_signals()
