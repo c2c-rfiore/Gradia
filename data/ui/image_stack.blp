@@ -167,6 +167,24 @@ template $GradiaImageStack: Adw.Bin {
                       }
                     }
                   }
+
+                  Gtk.Revealer tools_revealer {
+                    transition-type: slide_right;
+                    transition-duration: 300;
+                    reveal-child: true;
+
+                    child: Box {
+                      Separator {
+                        orientation: vertical;
+                        margin-start: 4;
+                        margin-end: 4;
+                        margin-top: 3;
+                        margin-bottom: 3;
+                      }
+
+                      $GradiaDrawingToolsGroup drawing_tools_group {}
+                    };
+                  }
                 }
               }
             }

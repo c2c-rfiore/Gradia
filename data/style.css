@@ -364,3 +364,12 @@ image.symbolic-circular {
   border-radius: 12px;
   background-color: alpha(black, 0.25);
 }
+
+/* The colour of the selected annotation tool, shown on its toolbar button.
+   The fill itself is set per-widget from the tool's current colour. */
+.tool-color-swatch {
+  border-radius: 9999px;
+  border: 1px solid alpha(currentColor, 0.4);
+  min-width: 16px;
+  min-height: 16px;
+}

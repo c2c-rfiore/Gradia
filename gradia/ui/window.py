@@ -160,7 +160,7 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         for mode in DrawingMode:
             self.create_action(
                 f"set-drawing-mode-{mode.name.lower()}",
-                lambda *_, m=mode: self.sidebar.set_drawing_mode(m),
+                lambda *_, m=mode: self.image_bin.set_drawing_mode(m),
                 mode.shortcuts,
                 disable_on_entry_focus=True
             )

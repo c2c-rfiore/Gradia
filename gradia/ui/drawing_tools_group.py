@@ -22,7 +22,6 @@ from gradia.ui.widget.drawing_tools_grid import DrawingToolsGrid
 from gradia.backend.tool_config import ToolOption, ToolOptionsManager, ToolConfig
 from gradia.ui.widget.font_dropdown import FontDropdown
 from gradia.constants import rootdir
-from gradia.backend.settings import Settings
 
 @Gtk.Template(resource_path=f"{rootdir}/ui/drawing_tools_group.ui")
 class DrawingToolsGroup(Gtk.Box):
@@ -31,7 +30,7 @@ class DrawingToolsGroup(Gtk.Box):
     size_scale = Gtk.Template.Child()
     color_picker = Gtk.Template.Child()
     extra_stack = Gtk.Template.Child()
-    extra_stack_revealer = Gtk.Template.Child()
+    options_revealer = Gtk.Template.Child()
     fill_0 = Gtk.Template.Child()
     fill_1 = Gtk.Template.Child()
     fill_2 = Gtk.Template.Child()
@@ -39,9 +38,10 @@ class DrawingToolsGroup(Gtk.Box):
     outline_2 = Gtk.Template.Child()
     drawing_tools_grid = Gtk.Template.Child()
     font_dropdown = Gtk.Template.Child()
-    header_button = Gtk.Template.Child()
-    header_chevron = Gtk.Template.Child()
-    body_revealer = Gtk.Template.Child()
+    color_button = Gtk.Template.Child()
+    color_swatch = Gtk.Template.Child()
+    size_button = Gtk.Template.Child()
+    options_button = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -55,24 +55,12 @@ class DrawingToolsGroup(Gtk.Box):
         self.temp_editing_tool_option: Optional[ToolOption] = None
         self.temp_editing_tool_config: Optional[ToolConfig] = None
 
+        self._swatch_provider = Gtk.CssProvider()
+        self.color_swatch.get_style_context().add_provider(
+            self._swatch_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
         self.connect("realize", self._on_realize)
-
-        Settings().bind_boolean(self.body_revealer, "reveal-child", "expand-annotation-tools")
-        self.body_revealer.connect("notify::reveal-child", self._on_body_revealed)
-        self._on_body_revealed()
-
-    @Gtk.Template.Callback()
-    def _on_header_clicked(self, _button) -> None:
-        self.body_revealer.set_reveal_child(not self.body_revealer.get_reveal_child())
-
-    def _on_body_revealed(self, *_args) -> None:
-        expanded = self.body_revealer.get_reveal_child()
-        self.header_chevron.set_from_icon_name(
-            "pan-down-symbolic" if expanded else "pan-end-symbolic"
-        )
-        self.header_button.set_tooltip_text(
-            _("Fold Annotation Tools") if expanded else _("Unfold Annotation Tools")
-        )
 
     def _on_realize(self, *args):
         self._scroll_controller = Gtk.EventControllerScroll.new(
@@ -115,9 +103,12 @@ class DrawingToolsGroup(Gtk.Box):
         self._updating_ui = True
 
         self.size_scale.set_sensitive(tool_config.has_scale)
+        self.size_button.set_sensitive(tool_config.has_scale)
         self.color_picker.set_sensitive(tool_config.has_primary_color)
+        self.color_button.set_sensitive(tool_config.has_primary_color)
         self.extra_stack.set_visible_child_name(tool_config.shown_stack)
-        self.extra_stack_revealer.set_reveal_child(tool_config.shown_stack != "empty")
+        # No options button at all for tools that have nothing to configure.
+        self.options_revealer.set_reveal_child(tool_config.shown_stack != "empty")
 
         self.color_picker.set_color_list(tool_config.primary_color_list)
 
@@ -129,6 +120,7 @@ class DrawingToolsGroup(Gtk.Box):
 
         if tool_config.has_primary_color:
             self.color_picker.set_color(tool_option.primary_color)
+            self._set_swatch_color(tool_option.primary_color)
 
         self.fill_0.set_color(tool_option.fill_color, emit=False)
         self.fill_1.set_color(tool_option.fill_color, emit=False)
@@ -236,6 +228,7 @@ class DrawingToolsGroup(Gtk.Box):
                 picker.set_color(Gdk.RGBA(0, 0, 0, 0))
 
         active_tool_option.primary_color = color
+        self._set_swatch_color(color)
         self.apply_changes()
 
     @Gtk.Template.Callback()
@@ -249,6 +242,12 @@ class DrawingToolsGroup(Gtk.Box):
 
         active_tool_option.font = font
         self.apply_changes()
+
+    def _set_swatch_color(self, color: Gdk.RGBA) -> None:
+        """Show the tool's colour on the toolbar button itself."""
+        self._swatch_provider.load_from_string(
+            f"box {{ background-color: {color.to_string()}; }}"
+        )
 
     def get_current_tool(self) -> Optional[ToolOption]:
         if self.current_tool_config is None:

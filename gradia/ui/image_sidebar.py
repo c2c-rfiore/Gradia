@@ -18,7 +18,6 @@
 from typing import Callable
 from dataclasses import dataclass
 from gi.repository import Gtk, Adw
-from gradia.ui.drawing_tools_group import DrawingToolsGroup
 from gradia.ui.background_selector import BackgroundSelector
 from gradia.ui.widget.background_aspect_ratio_selector import AspectRatioSelector
 from gradia.graphics.background import Background
@@ -41,7 +40,6 @@ class ImageOptions:
 class ImageSidebar(Adw.Bin):
     __gtype_name__ = "GradiaImageSidebar"
 
-    drawing_tools_group: DrawingToolsGroup = Gtk.Template.Child()
     background_selector_group: Adw.PreferencesGroup = Gtk.Template.Child()
     image_options_group = Gtk.Template.Child()
     padding_row: Adw.SpinRow = Gtk.Template.Child()
@@ -324,5 +322,3 @@ class ImageSidebar(Adw.Bin):
         self.on_image_options_changed(options)
         self._updating_widgets = False
 
-    def set_drawing_mode(self, mode):
-        self.drawing_tools_group.set_current_tool(mode)
