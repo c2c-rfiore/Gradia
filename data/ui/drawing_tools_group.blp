@@ -3,126 +3,155 @@ using Gtk 4.0;
 template $GradiaDrawingToolsGroup: Box {
   orientation: vertical;
 
-  Text {
-    text: _("Annotation Tools");
-    margin-bottom: 12;
-    sensitive: false;
+  Button header_button {
+    tooltip-text: _("Fold Annotation Tools");
 
     styles [
-      "heading",
-      "h4",
+      "flat",
+      "section-header",
     ]
-  }
 
-  $GradiaDrawingToolsGrid drawing_tools_grid {
-    tool-changed => $on_tool_changed();
-  }
+    clicked => $_on_header_clicked();
 
-  $GradiaQuickColorPicker color_picker {
-    margin-top: 6;
-    color-changed => $on_primary_color_changed();
-  }
+    child: Box {
+      spacing: 6;
 
-  Scale size_scale {
-    orientation: horizontal;
-    margin-top: 6;
+      Label {
+        label: _("Annotation Tools");
+        hexpand: true;
+        xalign: 0;
 
-    adjustment: Adjustment {
-      value-changed => $on_size_scale_changed();
-      lower: 3;
-      upper: 25;
-      value: 14;
-      step-increment: 2;
+        styles [
+          "heading",
+          "h4",
+        ]
+      }
+
+      Image header_chevron {
+        icon-name: "pan-down-symbolic";
+      }
     };
   }
 
-  Revealer extra_stack_revealer {
+  Revealer body_revealer {
+    transition-type: slide_down;
+    transition-duration: 250;
     reveal-child: true;
-    transition-type: slide_up;
-    transition-duration: 200;
-    valign: start;
 
-    child: Stack extra_stack {
-      transition-type: crossfade;
-      transition-duration: 200;
+    child: Box {
+      orientation: vertical;
+      margin-top: 12;
 
-      StackPage {
-        name: "empty";
+      $GradiaDrawingToolsGrid drawing_tools_grid {
+        tool-changed => $on_tool_changed();
+      }
 
-        child: Box {
-          visible: true;
+      $GradiaQuickColorPicker color_picker {
+        margin-top: 6;
+        color-changed => $on_primary_color_changed();
+      }
+
+      Scale size_scale {
+        orientation: horizontal;
+        margin-top: 6;
+
+        adjustment: Adjustment {
+          value-changed => $on_size_scale_changed();
+          lower: 3;
+          upper: 25;
+          value: 14;
+          step-increment: 2;
         };
       }
 
-      StackPage {
-        name: "fill";
+      Revealer extra_stack_revealer {
+        reveal-child: true;
+        transition-type: slide_up;
+        transition-duration: 200;
+        valign: start;
 
-        child: Box {
-          spacing: 8;
-          homogeneous: true;
-          margin-top: 6;
+        child: Stack extra_stack {
+          transition-type: crossfade;
+          transition-duration: 200;
 
-          $GradiaSimpleColorPicker fill_0 {
-            icon-name: "fill-symbolic";
-            text: _("Fill");
-            hexpand: true;
-            color-changed => $on_fill_color_changed();
-          }
-        };
-      }
+          StackPage {
+            name: "empty";
 
-      StackPage {
-        name: "fill-border";
-
-        child: Box {
-          spacing: 8;
-          homogeneous: true;
-          margin-top: 6;
-
-          $GradiaSimpleColorPicker fill_1 {
-            icon-name: "fill-symbolic";
-            text: _("Fill");
-            hexpand: true;
-            color-changed => $on_fill_color_changed();
+            child: Box {
+              visible: true;
+            };
           }
 
-          $GradiaSimpleColorPicker outline_1 {
-            icon-name: "outline-color-symbolic";
-            text: _("Border");
-            hexpand: true;
-            color-changed => $on_outline_color_changed();
-          }
-        };
-      }
+          StackPage {
+            name: "fill";
 
-      StackPage {
-        name: "text";
+            child: Box {
+              spacing: 8;
+              homogeneous: true;
+              margin-top: 6;
 
-        child: Box {
-          spacing: 6;
-          margin-top: 6;
-
-          $GradiaSimpleColorPicker fill_2 {
-            icon-name: "fill-symbolic";
-            hexpand: true;
-            color-changed => $on_fill_color_changed();
-            tooltip-text: _("Fill Color Picker");
+              $GradiaSimpleColorPicker fill_0 {
+                icon-name: "fill-symbolic";
+                text: _("Fill");
+                hexpand: true;
+                color-changed => $on_fill_color_changed();
+              }
+            };
           }
 
-          $GradiaSimpleColorPicker outline_2 {
-            icon-name: "outline-color-symbolic";
-            hexpand: true;
-            color-changed => $on_outline_color_changed();
-            tooltip-text: _("Outline Color Picker");
+          StackPage {
+            name: "fill-border";
+
+            child: Box {
+              spacing: 8;
+              homogeneous: true;
+              margin-top: 6;
+
+              $GradiaSimpleColorPicker fill_1 {
+                icon-name: "fill-symbolic";
+                text: _("Fill");
+                hexpand: true;
+                color-changed => $on_fill_color_changed();
+              }
+
+              $GradiaSimpleColorPicker outline_1 {
+                icon-name: "outline-color-symbolic";
+                text: _("Border");
+                hexpand: true;
+                color-changed => $on_outline_color_changed();
+              }
+            };
           }
 
-          $GradiaFontDropdown font_dropdown {
-            width-request: 160;
-            font-changed => $on_font_changed();
+          StackPage {
+            name: "text";
+
+            child: Box {
+              spacing: 6;
+              margin-top: 6;
+
+              $GradiaSimpleColorPicker fill_2 {
+                icon-name: "fill-symbolic";
+                hexpand: true;
+                color-changed => $on_fill_color_changed();
+                tooltip-text: _("Fill Color Picker");
+              }
+
+              $GradiaSimpleColorPicker outline_2 {
+                icon-name: "outline-color-symbolic";
+                hexpand: true;
+                color-changed => $on_outline_color_changed();
+                tooltip-text: _("Outline Color Picker");
+              }
+
+              $GradiaFontDropdown font_dropdown {
+                width-request: 160;
+                font-changed => $on_font_changed();
+              }
+            };
           }
         };
       }
     };
   }
 }
-

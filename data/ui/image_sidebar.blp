@@ -49,146 +49,186 @@ template $GradiaImageSidebar: Adw.Bin {
         Adw.PreferencesGroup background_selector_group {}
 
         Adw.PreferencesGroup image_options_group {
-          title: _("Image Options");
+          Adw.ExpanderRow image_options_expander {
+            title: _("Image Options");
+            expanded: true;
 
-          Adw.SpinRow padding_row {
-            title: _("_Padding");
-            use-underline: true;
-            numeric: true;
+            Adw.SpinRow padding_row {
+              title: _("_Padding");
+              use-underline: true;
+              numeric: true;
 
-            adjustment: Gtk.Adjustment padding_adjustment {
-              value: 5;
-              lower: 0;
-              upper: 75;
-              step-increment: 5;
-              page-increment: 5;
-            };
-          }
-
-          Adw.SpinRow corner_radius_row {
-            title: _("_Corner Radius");
-            use-underline: true;
-            numeric: true;
-
-            adjustment: Gtk.Adjustment corner_radius_adjustment {
-              value: 2;
-              lower: 0;
-              upper: 50;
-              step-increment: 1;
-              page-increment: 1;
-            };
-          }
-
-          $GradiaAspectRatioSelector aspect_ratio_selector {
-            ratio-changed => $_on_aspect_ratio_changed();
-            use-underline: true;
-          }
-
-          Adw.ActionRow shadow_strength_row {
-            title: _("_Shadow");
-            use-underline: true;
-            activatable-widget: shadow_strength_scale;
-
-            [suffix]
-            Gtk.Scale shadow_strength_scale {
-              digits: 0;
-              draw-value: true;
-              value-pos: right;
-              orientation: horizontal;
-              valign: center;
-              hexpand: true;
-
-              adjustment: Gtk.Adjustment {
+              adjustment: Gtk.Adjustment padding_adjustment {
+                value: 5;
                 lower: 0;
-                upper: 10;
-                step-increment: 1;
+                upper: 75;
+                step-increment: 5;
+                page-increment: 5;
               };
             }
-          }
 
-          Adw.SwitchRow auto_balance_toggle {
-            title: _("_Auto Balance");
-            use-underline: true;
-            activatable: true;
-          }
+            Adw.ActionRow padding_slider_row {
+              title: _("_Padding");
+              use-underline: true;
+              activatable-widget: padding_scale;
 
-          Adw.ActionRow rotation_row {
-            title: _("_Rotation");
-            use-underline: true;
-
-            [suffix]
-            Box {
-              orientation: horizontal;
-              spacing: 10;
-
-              Button rotate_left_button {
-                icon-name: "object-rotate-left-symbolic";
-                tooltip-text: _("Rotate Anticlockwise");
+              [suffix]
+              Gtk.Scale padding_scale {
+                digits: 0;
+                draw-value: true;
+                value-pos: right;
+                orientation: horizontal;
                 valign: center;
-
-                styles [
-                  "circular",
-                  "rotate",
-                ]
+                hexpand: true;
+                adjustment: padding_adjustment;
               }
+            }
 
-              Button rotate_right_button {
-                icon-name: "object-rotate-right-symbolic";
-                tooltip-text: _("Rotate Clockwise");
+            Adw.SpinRow corner_radius_row {
+              title: _("_Corner Radius");
+              use-underline: true;
+              numeric: true;
+
+              adjustment: Gtk.Adjustment corner_radius_adjustment {
+                value: 2;
+                lower: 0;
+                upper: 50;
+                step-increment: 1;
+                page-increment: 1;
+              };
+            }
+
+            Adw.ActionRow corner_radius_slider_row {
+              title: _("_Corner Radius");
+              use-underline: true;
+              activatable-widget: corner_radius_scale;
+
+              [suffix]
+              Gtk.Scale corner_radius_scale {
+                digits: 0;
+                draw-value: true;
+                value-pos: right;
+                orientation: horizontal;
                 valign: center;
+                hexpand: true;
+                adjustment: corner_radius_adjustment;
+              }
+            }
 
-                styles [
-                  "circular",
-                  "rotate",
-                ]
+            $GradiaAspectRatioSelector aspect_ratio_selector {
+              ratio-changed => $_on_aspect_ratio_changed();
+              use-underline: true;
+            }
+
+            Adw.ActionRow shadow_strength_row {
+              title: _("_Shadow");
+              use-underline: true;
+              activatable-widget: shadow_strength_scale;
+
+              [suffix]
+              Gtk.Scale shadow_strength_scale {
+                digits: 0;
+                draw-value: true;
+                value-pos: right;
+                orientation: horizontal;
+                valign: center;
+                hexpand: true;
+
+                adjustment: Gtk.Adjustment {
+                  lower: 0;
+                  upper: 10;
+                  step-increment: 1;
+                };
+              }
+            }
+
+            Adw.SwitchRow auto_balance_toggle {
+              title: _("_Auto Balance");
+              use-underline: true;
+              activatable: true;
+            }
+
+            Adw.ActionRow rotation_row {
+              title: _("_Rotation");
+              use-underline: true;
+
+              [suffix]
+              Box {
+                orientation: horizontal;
+                spacing: 10;
+
+                Button rotate_left_button {
+                  icon-name: "object-rotate-left-symbolic";
+                  tooltip-text: _("Rotate Anticlockwise");
+                  valign: center;
+
+                  styles [
+                    "circular",
+                    "rotate",
+                  ]
+                }
+
+                Button rotate_right_button {
+                  icon-name: "object-rotate-right-symbolic";
+                  tooltip-text: _("Rotate Clockwise");
+                  valign: center;
+
+                  styles [
+                    "circular",
+                    "rotate",
+                  ]
+                }
               }
             }
           }
         }
 
         Adw.PreferencesGroup file_info_group {
-          title: _("Current File");
+          Adw.ExpanderRow file_info_expander {
+            title: _("Current File");
+            expanded: true;
 
-          Adw.ActionRow filename_row {
-            title: _("Name");
-            subtitle: _("N/A");
-
-            styles [
-              "property",
-            ]
-          }
-
-          Adw.ActionRow location_row {
-            title: _("_Location");
-            use-underline: true;
-            subtitle: _("N/A");
-            activatable: true;
-            activatable-widget: open_folder_button;
-
-            styles [
-              "property",
-            ]
-
-            [suffix]
-            Button open_folder_button {
-              valign: center;
-              icon-name: "folder-open-symbolic";
-              action-name: "win.open-folder";
-              tooltip-text: _("Open Folder");
+            Adw.ActionRow filename_row {
+              title: _("Name");
+              subtitle: _("N/A");
 
               styles [
-                "flat",
+                "property",
               ]
             }
-          }
 
-          Adw.ActionRow processed_size_row {
-            title: _("Modified image size");
-            subtitle: _("N/A");
+            Adw.ActionRow location_row {
+              title: _("_Location");
+              use-underline: true;
+              subtitle: _("N/A");
+              activatable: true;
+              activatable-widget: open_folder_button;
 
-            styles [
-              "property",
-            ]
+              styles [
+                "property",
+              ]
+
+              [suffix]
+              Button open_folder_button {
+                valign: center;
+                icon-name: "folder-open-symbolic";
+                action-name: "win.open-folder";
+                tooltip-text: _("Open Folder");
+
+                styles [
+                  "flat",
+                ]
+              }
+            }
+
+            Adw.ActionRow processed_size_row {
+              title: _("Modified image size");
+              subtitle: _("N/A");
+
+              styles [
+                "property",
+              ]
+            }
           }
         }
       };

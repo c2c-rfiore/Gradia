@@ -44,6 +44,16 @@ class PreferencesWindow(Adw.PreferencesDialog):
     provider_name: Gtk.Label = Gtk.Template.Child()
     exiting_combo: Adw.ComboRow = Gtk.Template.Child()
     folder_label: Gtk.Label = Gtk.Template.Child()
+    show_padding_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_corner_radius_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_aspect_ratio_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_shadow_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_auto_balance_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_rotation_switch: Adw.SwitchRow = Gtk.Template.Child()
+    padding_style_combo: Adw.ComboRow = Gtk.Template.Child()
+    corner_radius_style_combo: Adw.ComboRow = Gtk.Template.Child()
+    padding_step_row: Adw.SpinRow = Gtk.Template.Child()
+    corner_radius_step_row: Adw.SpinRow = Gtk.Template.Child()
 
     ocr_enabled = GObject.Property(type=bool, default=ocr_enabled.lower() == 'true')
 
@@ -68,6 +78,7 @@ class PreferencesWindow(Adw.PreferencesDialog):
     def _setup_widgets(self):
         self._setup_save_format_combo()
         self._setup_exiting_combo()
+        self._setup_control_style_combos()
         self._setup_provider_display()
         self._bind_settings()
         self._setup_folder_label()
@@ -130,6 +141,66 @@ class PreferencesWindow(Adw.PreferencesDialog):
 
         self.exiting_combo.connect("notify::selected", self._on_exit_method_changed)
 
+    CONTROL_STYLE_OPTIONS = (
+        ("spin", _("Increment Buttons")),
+        ("slider", _("Slider")),
+    )
+
+    def _setup_control_style_combos(self):
+        self.control_style_keys = [key for key, _label in self.CONTROL_STYLE_OPTIONS]
+
+        for combo, current in (
+            (self.padding_style_combo, self.settings.padding_control_style),
+            (self.corner_radius_style_combo, self.settings.corner_radius_control_style),
+        ):
+            string_list = Gtk.StringList()
+            for _key, label in self.CONTROL_STYLE_OPTIONS:
+                string_list.append(label)
+            combo.set_model(string_list)
+            try:
+                combo.set_selected(self.control_style_keys.index(current))
+            except ValueError:
+                combo.set_selected(0)
+
+        self.padding_style_combo.connect("notify::selected", self._on_padding_style_changed)
+        self.corner_radius_style_combo.connect("notify::selected", self._on_corner_radius_style_changed)
+
+        # Bound by hand: the keys are int32 while SpinRow.value is a double,
+        # which g_settings_bind will not map for us.
+        self.padding_step_row.set_value(self.settings.padding_step)
+        self.corner_radius_step_row.set_value(self.settings.corner_radius_step)
+        self.padding_step_row.connect("notify::value", self._on_padding_step_changed)
+        self.corner_radius_step_row.connect("notify::value", self._on_corner_radius_step_changed)
+
+        self._update_step_row_sensitivity()
+
+    def _selected_control_style(self, combo_row) -> str:
+        selected = combo_row.get_selected()
+        if selected < len(self.control_style_keys):
+            return self.control_style_keys[selected]
+        return "spin"
+
+    def _on_padding_style_changed(self, combo_row, pspec) -> None:
+        self.settings.padding_control_style = self._selected_control_style(combo_row)
+        self._update_step_row_sensitivity()
+
+    def _on_corner_radius_style_changed(self, combo_row, pspec) -> None:
+        self.settings.corner_radius_control_style = self._selected_control_style(combo_row)
+        self._update_step_row_sensitivity()
+
+    def _on_padding_step_changed(self, spin_row, _pspec) -> None:
+        self.settings.padding_step = int(spin_row.get_value())
+
+    def _on_corner_radius_step_changed(self, spin_row, _pspec) -> None:
+        self.settings.corner_radius_step = int(spin_row.get_value())
+
+    def _update_step_row_sensitivity(self) -> None:
+        """An increment only means something for the plus/minus buttons."""
+        self.padding_step_row.set_sensitive(
+            self.settings.padding_control_style == "spin")
+        self.corner_radius_step_row.set_sensitive(
+            self.settings.corner_radius_control_style == "spin")
+
     def _on_save_format_changed(self, combo_row, pspec) -> None:
         selected = combo_row.get_selected()
         if selected < len(self.format_keys):
@@ -161,6 +232,16 @@ class PreferencesWindow(Adw.PreferencesDialog):
         self.settings.bind_switch(self.delete_screenshot_switch,"trash-screenshots-on-close")
         self.settings.bind_switch(self.confirm_upload_switch,"show-export-confirm-dialog")
         self.settings.bind_switch(self.overwrite_screenshot_switch,"overwrite-screenshot")
+
+        for switch, key in (
+            (self.show_padding_switch, "show-padding"),
+            (self.show_corner_radius_switch, "show-corner-radius"),
+            (self.show_aspect_ratio_switch, "show-aspect-ratio"),
+            (self.show_shadow_switch, "show-shadow"),
+            (self.show_auto_balance_switch, "show-auto-balance"),
+            (self.show_rotation_switch, "show-rotation"),
+        ):
+            self.settings.bind_boolean(switch, "active", key)
 
     @Gtk.Template.Callback()
     def on_choose_provider_clicked(self, button: Gtk.Button) -> None:

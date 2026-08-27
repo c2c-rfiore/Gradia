@@ -121,6 +121,84 @@ template $GradiaPreferencesWindow: Adw.PreferencesDialog {
     }
 
     Adw.PreferencesGroup {
+      title: _("Image Options");
+      description: _("Choose which controls appear in the Image Options section of the sidebar");
+
+      Adw.SwitchRow show_padding_switch {
+        title: _("_Padding");
+        use-underline: true;
+      }
+
+      Adw.SwitchRow show_corner_radius_switch {
+        title: _("_Corner Radius");
+        use-underline: true;
+      }
+
+      Adw.SwitchRow show_aspect_ratio_switch {
+        title: _("_Aspect Ratio");
+        use-underline: true;
+      }
+
+      Adw.SwitchRow show_shadow_switch {
+        title: _("_Shadow Slider");
+        use-underline: true;
+      }
+
+      Adw.SwitchRow show_auto_balance_switch {
+        title: _("A_uto Balance");
+        use-underline: true;
+      }
+
+      Adw.SwitchRow show_rotation_switch {
+        title: _("_Rotation");
+        use-underline: true;
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Padding and Corner Radius");
+      description: _("Pick how these two are adjusted, and how far one press of a plus or minus button moves them");
+
+      Adw.ComboRow padding_style_combo {
+        title: _("Pa_dding Control");
+        use-underline: true;
+      }
+
+      Adw.SpinRow padding_step_row {
+        title: _("Padding _Increment");
+        use-underline: true;
+        numeric: true;
+
+        adjustment: Gtk.Adjustment {
+          value: 5;
+          lower: 1;
+          upper: 25;
+          step-increment: 1;
+          page-increment: 5;
+        };
+      }
+
+      Adw.ComboRow corner_radius_style_combo {
+        title: _("Corner Radi_us Control");
+        use-underline: true;
+      }
+
+      Adw.SpinRow corner_radius_step_row {
+        title: _("Corner Radius Incre_ment");
+        use-underline: true;
+        numeric: true;
+
+        adjustment: Gtk.Adjustment {
+          value: 1;
+          lower: 1;
+          upper: 25;
+          step-increment: 1;
+          page-increment: 5;
+        };
+      }
+    }
+
+    Adw.PreferencesGroup {
       title: _("Text Extraction");
       visible: bind template.ocr_enabled;
 

@@ -3,125 +3,129 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GradiaGradientSelector : Adw.PreferencesGroup {
-  title: _("Gradient Background");
+  Adw.ExpanderRow expander {
+    title: _("Gradient Background");
+    expanded: true;
 
-  [header-suffix]
-  Box {
-    $GradiaGradientStepDialogButton step_dialog_button {
-      tooltip-text: _("Open Step Dialog");
-    }
-    $GradiaGradientPresetButton preset_button {
-      tooltip-text: _("Gradient Presets");
-    }
-  }
-
-  Adw.ActionRow gradient_preview_row {
-    child: Gtk.Box {
-      orientation: vertical;
+    [suffix]
+    Box {
       valign: center;
-      halign: center;
-      spacing: 12;
-      height-request: 165;
-      vexpand: true;
-      Box {
-        margin-top:5;
-        height-request: 100;
-        $GradiaAngleSelector angle_selector {
-          angle-changed => $on_angle_set();
-          notify::angle => $on_angle_changed();
-        }
 
+      $GradiaGradientStepDialogButton step_dialog_button {
+        tooltip-text: _("Open Step Dialog");
+      }
+      $GradiaGradientPresetButton preset_button {
+        tooltip-text: _("Gradient Presets");
+      }
+    }
+
+    Adw.ActionRow gradient_preview_row {
+      child: Gtk.Box {
+        orientation: vertical;
+        valign: center;
+        halign: center;
+        spacing: 12;
+        height-request: 165;
+        vexpand: true;
         Box {
-          width-request:160;
-          height-request:100;
-          orientation: vertical;
-          Box {
-            width-request:160;
-            height-request:50;
-
-            Adw.ToggleGroup type_group {
-              active-name: "linear";
-              valign: center;
-              width-request: 160;
-              notify::active-name => $on_toggle_changed();
-              Adw.Toggle{
-                icon-name: "linear-symbolic";
-                name: "linear";
-                tooltip: _("Linear");
-              }
-              Adw.Toggle{
-                icon-name: "radial-symbolic";
-                name: "radial";
-                tooltip: _("Radial");
-              }
-              Adw.Toggle{
-                icon-name: "conic-symbolic";
-                name: "conic";
-                tooltip: _("Conic");
-              }
-            }
+          margin-top:5;
+          height-request: 100;
+          $GradiaAngleSelector angle_selector {
+            angle-changed => $on_angle_set();
+            notify::angle => $on_angle_changed();
           }
 
           Box {
             width-request:160;
-            height-request:50;
+            height-request:100;
+            orientation: vertical;
+            Box {
+              width-request:160;
+              height-request:50;
+
+              Adw.ToggleGroup type_group {
+                active-name: "linear";
+                valign: center;
+                width-request: 160;
+                notify::active-name => $on_toggle_changed();
+                Adw.Toggle{
+                  icon-name: "linear-symbolic";
+                  name: "linear";
+                  tooltip: _("Linear");
+                }
+                Adw.Toggle{
+                  icon-name: "radial-symbolic";
+                  name: "radial";
+                  tooltip: _("Radial");
+                }
+                Adw.Toggle{
+                  icon-name: "conic-symbolic";
+                  name: "conic";
+                  tooltip: _("Conic");
+                }
+              }
+            }
 
             Box {
-              width-request:60;
+              width-request:160;
               height-request:50;
-              Entry angle_entry {
-                valign: center;
-                text:"0°";
-                max-length:4;
-                halign: start;
-                margin-end:10;
-                xalign:0.5;
 
-                styles ["heading", "angle-entry", "view"]
-              }
-            }
-            Revealer button_revealer {
-              reveal-child: false;
-              transition-type: crossfade;
-              transition-duration: 300;
-              child: Box {
-                  width-request:100;
-                  height-request:50;
+              Box {
+                width-request:60;
+                height-request:50;
+                Entry angle_entry {
                   valign: center;
-                  spacing: 12;
-                  Label  step_label {
-                    label: "100%";
-                    width-request:40;
-                    styles ["heading"]
-                  }
-                  Revealer remove_button_revealer{
-                    reveal-child: false;
-                    transition-type: crossfade;
-                    transition-duration: 300;
-                    child:Button remove_button {
-                      valign: center;
-                      tooltip-text: _("Remove Selected Color Step");
-                      icon-name: "user-trash-symbolic";
-                      styles ["destructive-action", "circular"]
-                    };
-                  }
-                };
-            }
+                  text:"0°";
+                  max-length:4;
+                  halign: start;
+                  margin-end:10;
+                  xalign:0.5;
 
+                  styles ["heading", "angle-entry", "view"]
+                }
+              }
+              Revealer button_revealer {
+                reveal-child: false;
+                transition-type: crossfade;
+                transition-duration: 300;
+                child: Box {
+                    width-request:100;
+                    height-request:50;
+                    valign: center;
+                    spacing: 12;
+                    Label  step_label {
+                      label: "100%";
+                      width-request:40;
+                      styles ["heading"]
+                    }
+                    Revealer remove_button_revealer{
+                      reveal-child: false;
+                      transition-type: crossfade;
+                      transition-duration: 300;
+                      child:Button remove_button {
+                        valign: center;
+                        tooltip-text: _("Remove Selected Color Step");
+                        icon-name: "user-trash-symbolic";
+                        styles ["destructive-action", "circular"]
+                      };
+                    }
+                  };
+              }
+
+            }
           }
         }
-      }
 
-      $GradientEditor gradient_editor {
-        height-request: 36;
-        width-request: 234;
-        valign: end;
-        margin-top:0;
-        margin-end:12;
-        margin-start:12;
+        $GradientEditor gradient_editor {
+          height-request: 36;
+          width-request: 234;
+          valign: end;
+          margin-top:0;
+          margin-end:12;
+          margin-start:12;
 
-      }
-    };
+        }
+      };
+    }
   }
 }
-

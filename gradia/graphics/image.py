@@ -32,6 +32,7 @@ from gradia.graphics.background import Background
 from gradia.ui.widget.preset_button import ImagePresetButton
 from gradia.app_constants import PRESET_IMAGES
 from gradia.app_constants import SUPPORTED_EXPORT_FORMATS
+from gradia.backend.settings import Settings
 
 class ImageBackground(Background):
     @property
@@ -140,6 +141,7 @@ class ImageSelector(Adw.PreferencesGroup):
     preview_picture: Gtk.Picture = Gtk.Template.Child()
     open_image_dialog: Gtk.FileDialog = Gtk.Template.Child()
     image_filter: Gtk.FileFilter = Gtk.Template.Child()
+    expander: Adw.ExpanderRow = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -156,6 +158,7 @@ class ImageSelector(Adw.PreferencesGroup):
         self._setup_drag_and_drop()
         self._setup_gesture()
         self._setup_preset_button()
+        Settings().bind_boolean(self.expander, "expanded", "expand-background-settings")
 
         self._update_preview()
 

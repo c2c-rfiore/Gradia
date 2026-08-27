@@ -306,3 +306,43 @@ image.symbolic-circular {
 .semi-transparent:active {
   opacity: 1;
 }
+
+/* Foldable sidebar section headers: a heading that behaves like a button. */
+.section-header {
+  padding: 4px 6px;
+  min-height: 0;
+}
+
+.section-header label {
+  /* Keep the heading readable, the flat button already signals interactivity. */
+  opacity: 0.85;
+}
+
+.section-header:hover label {
+  opacity: 1;
+}
+
+.section-header image {
+  opacity: 0.7;
+}
+
+/* The preset button is accented so it reads apart from the mode toggles.
+   The style class lands on the menubutton node, so reach its child button. */
+.preset-menu-button > button {
+  background-color: @accent_bg_color;
+  color: @accent_fg_color;
+  font-weight: bold;
+}
+
+.preset-menu-button > button:hover {
+  background-image: image(alpha(@accent_fg_color, 0.1));
+}
+
+.preset-menu-button > button:active,
+.preset-menu-button > button:checked {
+  background-image: image(alpha(@accent_fg_color, 0.2));
+}
+
+.destructive-label label {
+  color: @error_color;
+}
