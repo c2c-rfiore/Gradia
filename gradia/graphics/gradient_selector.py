@@ -20,6 +20,7 @@ from gradia.ui.widget.angle_selector import AngleSelector
 from gradia.ui.widget.gradient_editor import GradientEditor
 from gradia.ui.widget.gradient_step_dialog_button import GradientStepDialogButton
 from gradia.constants import rootdir
+from gradia.backend.settings import Settings
 from gradia.graphics.gradient import GradientBackground,Gradient
 from typing import Optional, Callable, List, Tuple
 
@@ -37,6 +38,7 @@ class GradientSelector(Adw.PreferencesGroup):
     type_group =  Gtk.Template.Child()
     preset_button = Gtk.Template.Child()
     step_dialog_button = Gtk.Template.Child()
+    expander = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -59,6 +61,7 @@ class GradientSelector(Adw.PreferencesGroup):
 
         self.step_dialog_button.set_gradient(self.gradient_background.gradient)
         self.step_dialog_button.set_callback(self.on_step_gradient_changed)
+        Settings().bind_boolean(self.expander, "expanded", "expand-background-settings")
 
     def _on_remove_button_clicked(self, button):
         self.gradient_editor.remove_selected_button()

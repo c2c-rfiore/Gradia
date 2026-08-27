@@ -44,6 +44,12 @@ class PreferencesWindow(Adw.PreferencesDialog):
     provider_name: Gtk.Label = Gtk.Template.Child()
     exiting_combo: Adw.ComboRow = Gtk.Template.Child()
     folder_label: Gtk.Label = Gtk.Template.Child()
+    show_padding_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_corner_radius_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_aspect_ratio_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_shadow_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_auto_balance_switch: Adw.SwitchRow = Gtk.Template.Child()
+    show_rotation_switch: Adw.SwitchRow = Gtk.Template.Child()
 
     ocr_enabled = GObject.Property(type=bool, default=ocr_enabled.lower() == 'true')
 
@@ -161,6 +167,16 @@ class PreferencesWindow(Adw.PreferencesDialog):
         self.settings.bind_switch(self.delete_screenshot_switch,"trash-screenshots-on-close")
         self.settings.bind_switch(self.confirm_upload_switch,"show-export-confirm-dialog")
         self.settings.bind_switch(self.overwrite_screenshot_switch,"overwrite-screenshot")
+
+        for switch, key in (
+            (self.show_padding_switch, "show-padding"),
+            (self.show_corner_radius_switch, "show-corner-radius"),
+            (self.show_aspect_ratio_switch, "show-aspect-ratio"),
+            (self.show_shadow_switch, "show-shadow"),
+            (self.show_auto_balance_switch, "show-auto-balance"),
+            (self.show_rotation_switch, "show-rotation"),
+        ):
+            self.settings.bind_boolean(switch, "active", key)
 
     @Gtk.Template.Callback()
     def on_choose_provider_clicked(self, button: Gtk.Button) -> None:

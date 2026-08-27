@@ -24,6 +24,7 @@ from gi.repository import Adw, Gtk, Gio, Gdk
 from gradia.graphics.background import Background
 from gradia.utils.colors import hex_to_rgb, hex_to_rgba, rgba_to_hex, is_light_color_hex
 from gradia.constants import rootdir  # pyright: ignore
+from gradia.backend.settings import Settings
 
 
 class SolidBackground(Background):
@@ -204,6 +205,7 @@ class SolidSelector(Adw.PreferencesGroup):
     ]
 
     color_presets_grid: Gtk.Grid = Gtk.Template.Child()
+    expander: Adw.ExpanderRow = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -220,6 +222,7 @@ class SolidSelector(Adw.PreferencesGroup):
         self.custom_alpha = 1.0
         self._setup_color_presets_row()
         self._update_selected_preset()
+        Settings().bind_boolean(self.expander, "expanded", "expand-background-settings")
 
     def _setup_color_presets_row(self) -> None:
         columns = 5

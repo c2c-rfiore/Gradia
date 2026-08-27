@@ -2,18 +2,20 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GradiaSolidSelector : Adw.PreferencesGroup {
-  title: _("Solid Color Background");
+  Adw.ExpanderRow expander {
+    title: _("Solid Color Background");
+    expanded: true;
 
+    Adw.ActionRow color_presets_row {
+      activatable: false;
+      selectable: false;
 
-  Adw.ActionRow color_presets_row {
-    activatable: false;
-    selectable: false;
-
-    child: Gtk.Grid color_presets_grid {
-      margin-top:3;
-      margin-bottom:3;
-      valign: center;
-      halign: center;
-    };
+      child: Gtk.Grid color_presets_grid {
+        margin-top:3;
+        margin-bottom:3;
+        valign: center;
+        halign: center;
+      };
+    }
   }
 }

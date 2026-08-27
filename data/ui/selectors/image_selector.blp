@@ -2,39 +2,43 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GradiaImageSelector : Adw.PreferencesGroup {
-  title: _("Image Background");
+  Adw.ExpanderRow expander {
+    title: _("Image Background");
+    expanded: true;
 
-  [header-suffix]
-  $GradiaImagePresetButton preset_button {
-    tooltip-text: _("Image Presets");
-  }
+    [suffix]
+    $GradiaImagePresetButton preset_button {
+      tooltip-text: _("Image Presets");
+      valign: center;
+    }
 
-  Adw.ButtonRow select_image_button_row {
-    title: _("Select Image");
-    start-icon-name: "image-alt-symbolic";
+    Adw.ButtonRow select_image_button_row {
+      title: _("Select Image");
+      start-icon-name: "image-alt-symbolic";
 
-    activated => $_on_select_clicked();
-  }
+      activated => $_on_select_clicked();
+    }
 
-  Adw.ActionRow preview_image_row {
-    activatable: false;
+    Adw.ActionRow preview_image_row {
+      activatable: false;
 
-    child: Gtk.Box preview_container {
-      orientation: vertical;
-      hexpand: true;
-      halign: center;
+      child: Gtk.Box preview_container {
+        orientation: vertical;
+        hexpand: true;
+        halign: center;
 
-      Gtk.Frame preview_frame {
-        margin-top: 8;
-        margin-bottom: 8;
+        Gtk.Frame preview_frame {
+          margin-top: 8;
+          margin-bottom: 8;
 
-        Gtk.Picture preview_picture {
-          content-fit: cover;
-          width-request: 250;
-          height-request: 88;
+          Gtk.Picture preview_picture {
+            content-fit: cover;
+            width-request: 250;
+            height-request: 88;
+          }
         }
-      }
-    };
+      };
+    }
   }
 }
 

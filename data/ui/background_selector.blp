@@ -6,74 +6,75 @@ template $GradiaBackgroundSelector: Adw.Bin {
     orientation: vertical;
 
     Separator {
-      margin-bottom: 12;
+      margin-bottom: 6;
     }
 
-    Box preset_box {
-      orientation: horizontal;
-      spacing: 6;
-      margin-bottom: 12;
+    Button header_button {
+      tooltip-text: _("Fold Background Options");
 
-      DropDown preset_dropdown {
-        hexpand: true;
-        tooltip-text: _("Background Preset");
+      styles [
+        "flat",
+        "section-header",
+      ]
 
-        notify::selected => $_on_preset_dropdown_changed();
-      }
+      clicked => $_on_header_clicked();
 
-      MenuButton preset_menu_button {
-        icon-name: "view-more-symbolic";
-        tooltip-text: _("Manage Presets");
-        valign: center;
-        menu-model: preset_menu;
+      child: Box {
+        spacing: 6;
 
-        styles [
-          "flat",
-        ]
-      }
+        Label {
+          label: _("Background");
+          hexpand: true;
+          xalign: 0;
+
+          styles [
+            "heading",
+            "h4",
+          ]
+        }
+
+        Image header_chevron {
+          icon-name: "pan-down-symbolic";
+        }
+      };
     }
 
-    $GradiaToggleGroup toggle_group {
-       notify::active-name => $_on_group_changed();
-    }
-
-    Revealer stack_revealer {
-      transition-type: slide_up;
+    Revealer body_revealer {
+      transition-type: slide_down;
       transition-duration: 250;
+      reveal-child: true;
 
-      Gtk.Stack stack {
-        margin-top: 12;
-        transition-type: crossfade;
-        transition-duration: 250;
-        hexpand: true;
-        valign: start;
-      }
+      child: Box {
+        orientation: vertical;
+        margin-top: 6;
+
+        MenuButton preset_button {
+          tooltip-text: _("Background Preset");
+          always-show-arrow: true;
+          margin-bottom: 12;
+
+          styles [
+            "preset-menu-button",
+          ]
+        }
+
+        $GradiaToggleGroup toggle_group {
+          notify::active-name => $_on_group_changed();
+        }
+
+        Revealer stack_revealer {
+          transition-type: slide_up;
+          transition-duration: 250;
+
+          Gtk.Stack stack {
+            margin-top: 12;
+            transition-type: crossfade;
+            transition-duration: 250;
+            hexpand: true;
+            valign: start;
+          }
+        }
+      };
     }
   };
-}
-
-menu preset_menu {
-  section {
-    item {
-      label: _("_New Preset");
-      action: "preset.new";
-    }
-
-    item {
-      label: _("_Duplicate Preset");
-      action: "preset.duplicate";
-    }
-
-    item {
-      label: _("_Rename Preset…");
-      action: "preset.rename";
-    }
-  }
-
-  section {
-    item {
-      label: _("_Delete Preset");
-      action: "preset.delete";
-    }
-  }
 }

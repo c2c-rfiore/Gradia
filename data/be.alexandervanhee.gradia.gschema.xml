@@ -30,6 +30,52 @@
       <summary>If images with same colored edges should be balanced</summary>
     </key>
 
+    <key name="expand-annotation-tools" type="b">
+      <default>true</default>
+      <summary>Whether the Annotation Tools section is unfolded</summary>
+    </key>
+    <key name="expand-background" type="b">
+      <default>true</default>
+      <summary>Whether the Background section is unfolded</summary>
+    </key>
+    <key name="expand-background-settings" type="b">
+      <default>true</default>
+      <summary>Whether the settings of the selected background mode are unfolded</summary>
+    </key>
+    <key name="expand-image-options" type="b">
+      <default>true</default>
+      <summary>Whether the Image Options section is unfolded</summary>
+    </key>
+    <key name="expand-file-info" type="b">
+      <default>true</default>
+      <summary>Whether the Current File section is unfolded</summary>
+    </key>
+
+    <key name="show-padding" type="b">
+      <default>true</default>
+      <summary>Whether the padding row is shown in Image Options</summary>
+    </key>
+    <key name="show-corner-radius" type="b">
+      <default>true</default>
+      <summary>Whether the corner radius row is shown in Image Options</summary>
+    </key>
+    <key name="show-aspect-ratio" type="b">
+      <default>true</default>
+      <summary>Whether the aspect ratio row is shown in Image Options</summary>
+    </key>
+    <key name="show-shadow" type="b">
+      <default>true</default>
+      <summary>Whether the shadow slider is shown in Image Options</summary>
+    </key>
+    <key name="show-auto-balance" type="b">
+      <default>true</default>
+      <summary>Whether the auto balance row is shown in Image Options</summary>
+    </key>
+    <key name="show-rotation" type="b">
+      <default>true</default>
+      <summary>Whether the rotation row is shown in Image Options</summary>
+    </key>
+
     <key name="background-presets" type="s">
       <default>''</default>
       <summary>Serialized list of background presets</summary>

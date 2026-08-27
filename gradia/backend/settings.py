@@ -180,6 +180,33 @@ class Settings:
     def background_mode(self, value: str) -> None:
         self._settings.set_string("background-mode", value)
 
+    """
+    Sidebar Layout
+    """
+
+    # Which Image Options rows the user wants to see in the sidebar.
+    IMAGE_OPTION_ROW_KEYS = (
+        "show-padding",
+        "show-corner-radius",
+        "show-aspect-ratio",
+        "show-shadow",
+        "show-auto-balance",
+        "show-rotation",
+    )
+
+    def get_boolean(self, key: str) -> bool:
+        return self._settings.get_boolean(key)
+
+    def bind_boolean(self, obj: object, prop: str, key: str) -> None:
+        """Two-way bind a boolean GSettings key to any object property."""
+        if key not in self._settings.list_keys():
+            print(f"Warning: GSettings key '{key}' not found in schema.")
+            return
+        self._settings.bind(key, obj, prop, Gio.SettingsBindFlags.DEFAULT)
+
+    def connect_boolean(self, key: str, callback) -> None:
+        self._settings.connect(f"changed::{key}", lambda *_: callback())
+
     @property
     def background_presets(self) -> str:
         return self._settings.get_string("background-presets")

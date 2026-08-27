@@ -22,6 +22,7 @@ from gradia.ui.widget.drawing_tools_grid import DrawingToolsGrid
 from gradia.backend.tool_config import ToolOption, ToolOptionsManager, ToolConfig
 from gradia.ui.widget.font_dropdown import FontDropdown
 from gradia.constants import rootdir
+from gradia.backend.settings import Settings
 
 @Gtk.Template(resource_path=f"{rootdir}/ui/drawing_tools_group.ui")
 class DrawingToolsGroup(Gtk.Box):
@@ -38,6 +39,9 @@ class DrawingToolsGroup(Gtk.Box):
     outline_2 = Gtk.Template.Child()
     drawing_tools_grid = Gtk.Template.Child()
     font_dropdown = Gtk.Template.Child()
+    header_button = Gtk.Template.Child()
+    header_chevron = Gtk.Template.Child()
+    body_revealer = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -52,6 +56,23 @@ class DrawingToolsGroup(Gtk.Box):
         self.temp_editing_tool_config: Optional[ToolConfig] = None
 
         self.connect("realize", self._on_realize)
+
+        Settings().bind_boolean(self.body_revealer, "reveal-child", "expand-annotation-tools")
+        self.body_revealer.connect("notify::reveal-child", self._on_body_revealed)
+        self._on_body_revealed()
+
+    @Gtk.Template.Callback()
+    def _on_header_clicked(self, _button) -> None:
+        self.body_revealer.set_reveal_child(not self.body_revealer.get_reveal_child())
+
+    def _on_body_revealed(self, *_args) -> None:
+        expanded = self.body_revealer.get_reveal_child()
+        self.header_chevron.set_from_icon_name(
+            "pan-down-symbolic" if expanded else "pan-end-symbolic"
+        )
+        self.header_button.set_tooltip_text(
+            _("Fold Annotation Tools") if expanded else _("Unfold Annotation Tools")
+        )
 
     def _on_realize(self, *args):
         self._scroll_controller = Gtk.EventControllerScroll.new(

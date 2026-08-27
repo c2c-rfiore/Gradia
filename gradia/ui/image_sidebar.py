@@ -58,6 +58,9 @@ class ImageSidebar(Adw.Bin):
     rotate_left_button: Gtk.Button = Gtk.Template.Child()
     rotate_right_button: Gtk.Button = Gtk.Template.Child()
     aspect_ratio_selector: AspectRatioSelector = Gtk.Template.Child()
+    image_options_expander: Adw.ExpanderRow = Gtk.Template.Child()
+    file_info_expander: Adw.ExpanderRow = Gtk.Template.Child()
+    rotation_row: Adw.ActionRow = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -71,8 +74,8 @@ class ImageSidebar(Adw.Bin):
         self._updating_widgets = False
         self._current_rotation = 0
         self._current_background = None
+        self._option_rows: dict = {}
 
-        self.image_options_group_content = self.image_options_group.get_first_child().get_first_child().get_next_sibling()
         self.background_selector: BackgroundSelector = BackgroundSelector(
             callback=self._on_background_changed
         )
@@ -86,6 +89,7 @@ class ImageSidebar(Adw.Bin):
             self._get_preset_image_options,
             self._apply_preset_image_options,
         )
+        self._setup_sections()
 
     def _setup_widgets(self) -> None:
         self.padding_adjustment.set_value(self.settings.image_padding)
@@ -93,6 +97,48 @@ class ImageSidebar(Adw.Bin):
         self.shadow_strength_scale.set_value(self.settings.image_shadow_strength)
         self.auto_balance_toggle.set_active(self.settings.image_auto_balance)
         self.aspect_ratio_selector.set_ratio(self.settings.image_aspect_ratio)
+
+    """
+    Sidebar Sections
+    """
+
+    def _setup_sections(self) -> None:
+        self.settings.bind_boolean(self.image_options_expander, "expanded", "expand-image-options")
+        self.settings.bind_boolean(self.file_info_expander, "expanded", "expand-file-info")
+
+        # Which Image Options rows to show is a preference; re-apply when it changes.
+        self._option_rows = {
+            "show-padding": self.padding_row,
+            "show-corner-radius": self.corner_radius_row,
+            "show-aspect-ratio": self.aspect_ratio_selector,
+            "show-shadow": self.shadow_strength_row,
+            "show-auto-balance": self.auto_balance_toggle,
+            "show-rotation": self.rotation_row,
+        }
+        for key in self._option_rows:
+            self.settings.connect_boolean(key, self._apply_row_visibility)
+        self._apply_row_visibility()
+
+    def _apply_row_visibility(self) -> None:
+        """A row shows when the preference allows it and the current mode supports it."""
+        if not self._option_rows:
+            return  # called from the background selector before the sections are set up
+
+        mode_allows = self._background_mode != "none"
+        for key, row in self._option_rows.items():
+            wanted = self.settings.get_boolean(key)
+            # Padding stays visible but goes insensitive without a background.
+            if row is self.padding_row:
+                row.set_visible(wanted)
+                row.set_sensitive(mode_allows)
+            elif key in ("show-auto-balance", "show-rotation"):
+                row.set_visible(wanted)
+            else:
+                row.set_visible(wanted and mode_allows)
+
+        self.image_options_expander.set_visible(
+            any(self.settings.get_boolean(key) for key in self._option_rows)
+        )
 
     def _on_background_changed(self, updated_background: Background) -> None:
         self._current_background = updated_background
@@ -232,18 +278,12 @@ class ImageSidebar(Adw.Bin):
 
         self.on_image_options_changed(options)
 
-    def _set_selective_visiblility(self, is_disabled: bool) -> None:
-        self.padding_row.set_sensitive(not is_disabled)
-        self.corner_radius_row.set_visible(not is_disabled)
-        self.aspect_ratio_selector.set_visible(not is_disabled)
-        self.shadow_strength_row.set_visible(not is_disabled)
-
     def _on_background_mode_changed(self, mode: str) -> None:
         self._background_mode = mode
         is_disabled = mode == "none"
         self._updating_widgets = True
 
-        self._set_selective_visiblility(is_disabled)
+        self._apply_row_visibility()
 
         if is_disabled:
             options = self._get_disabled_options()

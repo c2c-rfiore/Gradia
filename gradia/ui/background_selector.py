@@ -19,7 +19,7 @@ import json
 from collections.abc import Callable
 from typing import Any, Optional
 
-from gi.repository import GObject, Gio, Gtk, Adw, GLib
+from gi.repository import GObject, Gtk, Adw, GLib, Pango
 
 from gradia.graphics.gradient import Gradient, GradientBackground
 from gradia.graphics.gradient_selector import GradientSelector
@@ -47,8 +47,10 @@ class BackgroundSelector(Adw.Bin):
     toggle_group: ToggleGroup = Gtk.Template.Child()
     stack: Gtk.Stack = Gtk.Template.Child()
     stack_revealer: Gtk.Revealer = Gtk.Template.Child()
-    preset_dropdown: Gtk.DropDown = Gtk.Template.Child()
-    preset_menu_button: Gtk.MenuButton = Gtk.Template.Child()
+    preset_button: Gtk.MenuButton = Gtk.Template.Child()
+    header_button: Gtk.Button = Gtk.Template.Child()
+    header_chevron: Gtk.Image = Gtk.Template.Child()
+    body_revealer: Gtk.Revealer = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -68,7 +70,8 @@ class BackgroundSelector(Adw.Bin):
 
         self.preset_store = BackgroundPresetStore(self.settings)
         self._applying_preset = False
-        self._updating_dropdown = False
+        self._preset_rows: list[Gtk.ListBoxRow] = []
+        self._preset_list_busy = False
         self._image_options_getter: Optional[ImageOptionsGetter] = None
         self._image_options_applier: Optional[ImageOptionsApplier] = None
 
@@ -91,23 +94,64 @@ class BackgroundSelector(Adw.Bin):
         if self.current_mode != "none":
             self.stack.set_visible_child_name(self.current_mode)
         self._update_revealer_visibility()
-        self._setup_preset_actions()
-        self._refresh_preset_dropdown()
+        self._setup_preset_popover()
+        self._refresh_presets()
+        self.settings.bind_boolean(self.body_revealer, "reveal-child", "expand-background")
+        self.body_revealer.connect("notify::reveal-child", self._on_body_revealed)
+        self._on_body_revealed()
 
-    def _setup_preset_actions(self) -> None:
-        self.preset_actions = Gio.SimpleActionGroup()
+    def _setup_preset_popover(self) -> None:
+        """Build the preset popover: New Preset first, then the presets, then rename/delete."""
+        self.preset_popover = Gtk.Popover(has_arrow=True, width_request=240)
+        self.preset_popover.add_css_class("menu")
 
-        for name, handler in (
-            ("new", self._on_preset_new),
-            ("duplicate", self._on_preset_duplicate),
-            ("rename", self._on_preset_rename),
-            ("delete", self._on_preset_delete),
-        ):
-            action = Gio.SimpleAction.new(name, None)
-            action.connect("activate", handler)
-            self.preset_actions.add_action(action)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+        box.set_margin_start(6)
+        box.set_margin_end(6)
 
-        self.insert_action_group("preset", self.preset_actions)
+        self.new_preset_button = self._popover_button(
+            _("New Preset…"), "list-add-symbolic", self._on_preset_new
+        )
+        box.append(self.new_preset_button)
+        box.append(Gtk.Separator(margin_top=3, margin_bottom=3))
+
+        self.preset_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.preset_list.add_css_class("preset-list")
+        self.preset_list.connect("row-activated", self._on_preset_row_activated)
+
+        scroller = Gtk.ScrolledWindow(
+            propagate_natural_height=True,
+            max_content_height=260,
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            child=self.preset_list,
+        )
+        box.append(scroller)
+
+        box.append(Gtk.Separator(margin_top=3, margin_bottom=3))
+        self.rename_preset_button = self._popover_button(
+            _("Rename…"), "document-edit-symbolic", self._on_preset_rename
+        )
+        self.delete_preset_button = self._popover_button(
+            _("Delete Preset"), "user-trash-symbolic", self._on_preset_delete
+        )
+        self.delete_preset_button.add_css_class("destructive-label")
+        box.append(self.rename_preset_button)
+        box.append(self.delete_preset_button)
+
+        self.preset_popover.set_child(box)
+        self.preset_button.set_popover(self.preset_popover)
+
+    def _popover_button(self, label: str, icon_name: str, handler) -> Gtk.Button:
+        content = Gtk.Box(spacing=12)
+        content.append(Gtk.Image(icon_name=icon_name))
+        content.append(Gtk.Label(label=label, xalign=0, hexpand=True))
+
+        button = Gtk.Button(child=content)
+        button.add_css_class("flat")
+        button.connect("clicked", lambda _b: (self.preset_popover.popdown(), handler()))
+        return button
 
     """
     Callbacks
@@ -129,16 +173,26 @@ class BackgroundSelector(Adw.Bin):
             self._notify_current()
 
     @Gtk.Template.Callback()
-    def _on_preset_dropdown_changed(self, dropdown: Gtk.DropDown, _param: GObject.ParamSpec) -> None:
-        if self._updating_dropdown:
+    def _on_header_clicked(self, _button: Gtk.Button) -> None:
+        self.body_revealer.set_reveal_child(not self.body_revealer.get_reveal_child())
+
+    def _on_body_revealed(self, *_args) -> None:
+        expanded = self.body_revealer.get_reveal_child()
+        self.header_chevron.set_from_icon_name(
+            "pan-down-symbolic" if expanded else "pan-end-symbolic"
+        )
+        self.header_button.set_tooltip_text(
+            _("Fold Background Options") if expanded else _("Unfold Background Options")
+        )
+
+    def _on_preset_row_activated(self, _list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
+        if self._preset_list_busy:
             return
 
-        index = dropdown.get_selected()
-        if index == Gtk.INVALID_LIST_POSITION:
-            return
-
-        if self.preset_store.set_active_index(index):
+        self.preset_popover.popdown()
+        if self.preset_store.set_active_index(row.get_index()):
             self._apply_preset(self.preset_store.active)
+            self._refresh_presets()
 
     def _on_gradient_changed(self, gradient: GradientBackground) -> None:
         if self._applying_preset:
@@ -229,22 +283,39 @@ class BackgroundSelector(Adw.Bin):
             self.stack.set_visible_child_name(mode)
         self._update_revealer_visibility()
 
-    def _refresh_preset_dropdown(self) -> None:
-        self._updating_dropdown = True
+    def _refresh_presets(self) -> None:
+        """Rebuild the popover list and put the active preset's name on the button."""
+        self._preset_list_busy = True
         try:
-            model = Gtk.StringList.new(self.preset_store.names)
-            self.preset_dropdown.set_model(model)
-            self.preset_dropdown.set_selected(self.preset_store.active_index)
-        finally:
-            self._updating_dropdown = False
+            for row in self._preset_rows:
+                self.preset_list.remove(row)
+            self._preset_rows = []
 
-        self.preset_actions.lookup_action("delete").set_enabled(len(self.preset_store.presets) > 1)
+            for index, preset in enumerate(self.preset_store.presets):
+                row = Gtk.ListBoxRow(activatable=True)
+                content = Gtk.Box(spacing=12, margin_top=6, margin_bottom=6,
+                                  margin_start=6, margin_end=6)
+                content.append(Gtk.Label(label=preset.name, xalign=0, hexpand=True,
+                                         ellipsize=Pango.EllipsizeMode.END))
+
+                check = Gtk.Image(icon_name="object-select-symbolic")
+                check.set_opacity(1.0 if index == self.preset_store.active_index else 0.0)
+                content.append(check)
+
+                row.set_child(content)
+                self.preset_list.append(row)
+                self._preset_rows.append(row)
+        finally:
+            self._preset_list_busy = False
+
+        self.preset_button.set_label(self.preset_store.active.name)
+        self.delete_preset_button.set_sensitive(len(self.preset_store.presets) > 1)
 
     """
     Preset Actions
     """
 
-    def _on_preset_new(self, _action: Gio.SimpleAction, _param: Optional[GLib.Variant]) -> None:
+    def _on_preset_new(self) -> None:
         self._prompt_for_name(
             heading=_("New Preset"),
             initial=self.preset_store.unique_name(_("Preset")),
@@ -252,19 +323,12 @@ class BackgroundSelector(Adw.Bin):
         )
 
     def _create_preset(self, name: str) -> None:
-        # A new preset starts from the defaults; use Duplicate to branch off the current one.
-        self._add_preset(BackgroundPreset(name=name))
-
-    def _on_preset_duplicate(self, _action: Gio.SimpleAction, _param: Optional[GLib.Variant]) -> None:
-        active = self.preset_store.active
-        self._add_preset(active.copy_as(_("{name} copy").format(name=active.name)))
-
-    def _add_preset(self, preset: BackgroundPreset) -> None:
-        self.preset_store.add(preset)
-        self._refresh_preset_dropdown()
+        # A new preset starts from the defaults rather than copying the current one.
+        self.preset_store.add(BackgroundPreset(name=name))
+        self._refresh_presets()
         self._apply_preset(self.preset_store.active)
 
-    def _on_preset_rename(self, _action: Gio.SimpleAction, _param: Optional[GLib.Variant]) -> None:
+    def _on_preset_rename(self) -> None:
         self._prompt_for_name(
             heading=_("Rename Preset"),
             initial=self.preset_store.active.name,
@@ -273,9 +337,9 @@ class BackgroundSelector(Adw.Bin):
 
     def _rename_active_preset(self, name: str) -> None:
         if self.preset_store.rename(self.preset_store.active_index, name):
-            self._refresh_preset_dropdown()
+            self._refresh_presets()
 
-    def _on_preset_delete(self, _action: Gio.SimpleAction, _param: Optional[GLib.Variant]) -> None:
+    def _on_preset_delete(self) -> None:
         if len(self.preset_store.presets) <= 1:
             return
 
@@ -296,7 +360,7 @@ class BackgroundSelector(Adw.Bin):
         if response != "delete":
             return
         if self.preset_store.remove(self.preset_store.active_index):
-            self._refresh_preset_dropdown()
+            self._refresh_presets()
             self._apply_preset(self.preset_store.active)
 
     def _prompt_for_name(
