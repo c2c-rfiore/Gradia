@@ -31,6 +31,7 @@ configure_file(
 gradia_sources = [
   '__init__.py',
   'main.py',
+  'preview_app.py',
   'clipboard.py',
   'app_constants.py',
 ]
