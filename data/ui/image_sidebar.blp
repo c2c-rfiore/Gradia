@@ -67,6 +67,23 @@ template $GradiaImageSidebar: Adw.Bin {
               };
             }
 
+            Adw.ActionRow padding_slider_row {
+              title: _("_Padding");
+              use-underline: true;
+              activatable-widget: padding_scale;
+
+              [suffix]
+              Gtk.Scale padding_scale {
+                digits: 0;
+                draw-value: true;
+                value-pos: right;
+                orientation: horizontal;
+                valign: center;
+                hexpand: true;
+                adjustment: padding_adjustment;
+              }
+            }
+
             Adw.SpinRow corner_radius_row {
               title: _("_Corner Radius");
               use-underline: true;
@@ -79,6 +96,23 @@ template $GradiaImageSidebar: Adw.Bin {
                 step-increment: 1;
                 page-increment: 1;
               };
+            }
+
+            Adw.ActionRow corner_radius_slider_row {
+              title: _("_Corner Radius");
+              use-underline: true;
+              activatable-widget: corner_radius_scale;
+
+              [suffix]
+              Gtk.Scale corner_radius_scale {
+                digits: 0;
+                draw-value: true;
+                value-pos: right;
+                orientation: horizontal;
+                valign: center;
+                hexpand: true;
+                adjustment: corner_radius_adjustment;
+              }
             }
 
             $GradiaAspectRatioSelector aspect_ratio_selector {

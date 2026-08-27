@@ -51,6 +51,25 @@
       <summary>Whether the Current File section is unfolded</summary>
     </key>
 
+    <key name="padding-control-style" type="s">
+      <default>'spin'</default>
+      <summary>Whether padding uses increment buttons or a slider</summary>
+      <description>Either 'spin' for plus/minus increment buttons or 'slider'</description>
+    </key>
+    <key name="corner-radius-control-style" type="s">
+      <default>'spin'</default>
+      <summary>Whether corner radius uses increment buttons or a slider</summary>
+      <description>Either 'spin' for plus/minus increment buttons or 'slider'</description>
+    </key>
+    <key name="padding-step" type="i">
+      <default>5</default>
+      <summary>How much one press of the padding increment buttons adds</summary>
+    </key>
+    <key name="corner-radius-step" type="i">
+      <default>1</default>
+      <summary>How much one press of the corner radius increment buttons adds</summary>
+    </key>
+
     <key name="show-padding" type="b">
       <default>true</default>
       <summary>Whether the padding row is shown in Image Options</summary>

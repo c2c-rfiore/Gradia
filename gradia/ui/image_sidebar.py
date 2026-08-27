@@ -61,6 +61,8 @@ class ImageSidebar(Adw.Bin):
     image_options_expander: Adw.ExpanderRow = Gtk.Template.Child()
     file_info_expander: Adw.ExpanderRow = Gtk.Template.Child()
     rotation_row: Adw.ActionRow = Gtk.Template.Child()
+    padding_slider_row: Adw.ActionRow = Gtk.Template.Child()
+    corner_radius_slider_row: Adw.ActionRow = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -74,7 +76,7 @@ class ImageSidebar(Adw.Bin):
         self._updating_widgets = False
         self._current_rotation = 0
         self._current_background = None
-        self._option_rows: dict = {}
+        self._sections_ready = False
 
         self.background_selector: BackgroundSelector = BackgroundSelector(
             callback=self._on_background_changed
@@ -102,42 +104,69 @@ class ImageSidebar(Adw.Bin):
     Sidebar Sections
     """
 
+    ROW_VISIBILITY_KEYS = (
+        "show-padding",
+        "show-corner-radius",
+        "show-aspect-ratio",
+        "show-shadow",
+        "show-auto-balance",
+        "show-rotation",
+    )
+    CONTROL_STYLE_KEYS = ("padding-control-style", "corner-radius-control-style")
+    STEP_KEYS = ("padding-step", "corner-radius-step")
+
     def _setup_sections(self) -> None:
         self.settings.bind_boolean(self.image_options_expander, "expanded", "expand-image-options")
         self.settings.bind_boolean(self.file_info_expander, "expanded", "expand-file-info")
 
-        # Which Image Options rows to show is a preference; re-apply when it changes.
-        self._option_rows = {
-            "show-padding": self.padding_row,
-            "show-corner-radius": self.corner_radius_row,
-            "show-aspect-ratio": self.aspect_ratio_selector,
-            "show-shadow": self.shadow_strength_row,
-            "show-auto-balance": self.auto_balance_toggle,
-            "show-rotation": self.rotation_row,
-        }
-        for key in self._option_rows:
-            self.settings.connect_boolean(key, self._apply_row_visibility)
+        self._sections_ready = True
+
+        # Which rows appear, and whether padding/corner radius are increment
+        # buttons or sliders, are all preferences.
+        for key in self.ROW_VISIBILITY_KEYS + self.CONTROL_STYLE_KEYS:
+            self.settings.connect_changed(key, self._apply_row_visibility)
+        for key in self.STEP_KEYS:
+            self.settings.connect_changed(key, self._apply_step_increments)
+
+        self._apply_step_increments()
         self._apply_row_visibility()
+
+    def _apply_step_increments(self) -> None:
+        """How much one press of a plus/minus button moves the value."""
+        self.padding_adjustment.set_step_increment(self.settings.padding_step)
+        self.padding_adjustment.set_page_increment(self.settings.padding_step)
+        self.corner_radius_adjustment.set_step_increment(self.settings.corner_radius_step)
+        self.corner_radius_adjustment.set_page_increment(self.settings.corner_radius_step)
 
     def _apply_row_visibility(self) -> None:
         """A row shows when the preference allows it and the current mode supports it."""
-        if not self._option_rows:
+        if not self._sections_ready:
             return  # called from the background selector before the sections are set up
 
         mode_allows = self._background_mode != "none"
-        for key, row in self._option_rows.items():
-            wanted = self.settings.get_boolean(key)
-            # Padding stays visible but goes insensitive without a background.
-            if row is self.padding_row:
-                row.set_visible(wanted)
-                row.set_sensitive(mode_allows)
-            elif key in ("show-auto-balance", "show-rotation"):
-                row.set_visible(wanted)
-            else:
-                row.set_visible(wanted and mode_allows)
+        show = self.settings.get_boolean
+
+        # Padding and corner radius each have a spin row and a slider row sharing
+        # one adjustment; the preference decides which of the pair is on screen.
+        padding_spin = self.settings.padding_control_style == "spin"
+        self.padding_row.set_visible(show("show-padding") and padding_spin)
+        self.padding_slider_row.set_visible(show("show-padding") and not padding_spin)
+        # Padding stays visible but goes insensitive without a background.
+        self.padding_row.set_sensitive(mode_allows)
+        self.padding_slider_row.set_sensitive(mode_allows)
+
+        radius_spin = self.settings.corner_radius_control_style == "spin"
+        radius_wanted = show("show-corner-radius") and mode_allows
+        self.corner_radius_row.set_visible(radius_wanted and radius_spin)
+        self.corner_radius_slider_row.set_visible(radius_wanted and not radius_spin)
+
+        self.aspect_ratio_selector.set_visible(show("show-aspect-ratio") and mode_allows)
+        self.shadow_strength_row.set_visible(show("show-shadow") and mode_allows)
+        self.auto_balance_toggle.set_visible(show("show-auto-balance"))
+        self.rotation_row.set_visible(show("show-rotation"))
 
         self.image_options_expander.set_visible(
-            any(self.settings.get_boolean(key) for key in self._option_rows)
+            any(show(key) for key in self.ROW_VISIBILITY_KEYS)
         )
 
     def _on_background_changed(self, updated_background: Background) -> None:
@@ -153,8 +182,10 @@ class ImageSidebar(Adw.Bin):
             self._notify_image_options_changed()
 
     def _connect_signals(self) -> None:
-        self.padding_row.connect("output", self._on_padding_changed)
-        self.corner_radius_row.connect("output", self._on_corner_radius_changed)
+        # The spin row and the slider share one adjustment, so watch the adjustment
+        # rather than either widget.
+        self.padding_adjustment.connect("value-changed", self._on_padding_changed)
+        self.corner_radius_adjustment.connect("value-changed", self._on_corner_radius_changed)
         self.shadow_strength_scale.connect("value-changed", self._on_shadow_strength_changed)
         self.auto_balance_toggle.connect("notify::active", self._on_auto_balance_changed)
         self.rotate_left_button.connect("clicked", self._on_rotate_left_clicked)

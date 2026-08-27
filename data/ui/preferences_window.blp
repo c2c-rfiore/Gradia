@@ -156,6 +156,49 @@ template $GradiaPreferencesWindow: Adw.PreferencesDialog {
     }
 
     Adw.PreferencesGroup {
+      title: _("Padding and Corner Radius");
+      description: _("Pick how these two are adjusted, and how far one press of a plus or minus button moves them");
+
+      Adw.ComboRow padding_style_combo {
+        title: _("Pa_dding Control");
+        use-underline: true;
+      }
+
+      Adw.SpinRow padding_step_row {
+        title: _("Padding _Increment");
+        use-underline: true;
+        numeric: true;
+
+        adjustment: Gtk.Adjustment {
+          value: 5;
+          lower: 1;
+          upper: 25;
+          step-increment: 1;
+          page-increment: 5;
+        };
+      }
+
+      Adw.ComboRow corner_radius_style_combo {
+        title: _("Corner Radi_us Control");
+        use-underline: true;
+      }
+
+      Adw.SpinRow corner_radius_step_row {
+        title: _("Corner Radius Incre_ment");
+        use-underline: true;
+        numeric: true;
+
+        adjustment: Gtk.Adjustment {
+          value: 1;
+          lower: 1;
+          upper: 25;
+          step-increment: 1;
+          page-increment: 5;
+        };
+      }
+    }
+
+    Adw.PreferencesGroup {
       title: _("Text Extraction");
       visible: bind template.ocr_enabled;
 
