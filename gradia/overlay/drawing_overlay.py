@@ -24,6 +24,10 @@ from gradia.overlay.drawing_actions import *
 from gradia.overlay.text_entry_popover import TextEntryPopover
 
 HANDLE_SIZE = 8
+# The grab area is deliberately much larger than the drawn handle: an 8px target
+# is nearly impossible to hit, and the handle is only a visual marker.
+HANDLE_GRAB_SIZE = 22
+EDGE_GRAB_MARGIN = 10
 
 class ResizeHandle(Enum):
     NONE = "none"
@@ -146,11 +150,23 @@ class DrawingOverlay(Gtk.DrawingArea):
         if not self.selected_action or not self._can_resize_action(self.selected_action):
             return ResizeHandle.NONE
 
+        # Grab from the handle's centre outwards, so the target is HANDLE_GRAB_SIZE
+        # across rather than the HANDLE_SIZE square that gets painted.
+        reach = HANDLE_GRAB_SIZE / 2
         handles = self._get_resize_handles(self.selected_action)
+        nearest, nearest_distance = ResizeHandle.NONE, None
         for handle_type, handle_x, handle_y in handles:
-            if (handle_x <= x_widget <= handle_x + HANDLE_SIZE and
-                handle_y <= y_widget <= handle_y + HANDLE_SIZE):
-                return handle_type
+            center_x = handle_x + HANDLE_SIZE / 2
+            center_y = handle_y + HANDLE_SIZE / 2
+            dx, dy = abs(x_widget - center_x), abs(y_widget - center_y)
+            if dx <= reach and dy <= reach:
+                distance = dx * dx + dy * dy
+                if nearest_distance is None or distance < nearest_distance:
+                    nearest, nearest_distance = handle_type, distance
+
+        # Overlapping grab areas on a short shape: take the closest handle.
+        if nearest != ResizeHandle.NONE:
+            return nearest
 
         if isinstance(self.selected_action, (ArrowAction, LineAction)):
             return ResizeHandle.NONE
@@ -159,7 +175,7 @@ class DrawingOverlay(Gtk.DrawingArea):
         x1_widget, y1_widget = self._image_to_widget_coords(min_x_img, min_y_img)
         x2_widget, y2_widget = self._image_to_widget_coords(max_x_img, max_y_img)
 
-        margin = HANDLE_SIZE
+        margin = EDGE_GRAB_MARGIN
 
         if abs(y_widget - y1_widget) <= margin and x1_widget <= x_widget <= x2_widget:
             return ResizeHandle.TOP
@@ -346,6 +362,46 @@ class DrawingOverlay(Gtk.DrawingArea):
         self.end_point = None
         self.queue_draw()
 
+    # Freehand tools stay purely additive: drawing over existing ink is normal.
+    # Every other tool defers to an element already under the pointer.
+    FREEHAND_MODES = (DrawingMode.PEN, DrawingMode.HIGHLIGHTER)
+
+    def _mode_edits_existing(self) -> bool:
+        mode = self.options.mode
+        return mode != DrawingMode.SELECT and mode not in self.FREEHAND_MODES
+
+    def _existing_action_at(self, x_widget: float, y_widget: float, x_image: int, y_image: int):
+        """What a press here would act on: a resize handle, a move, or a selection."""
+        if self.selected_action and self._can_resize_action(self.selected_action):
+            handle = self._get_handle_at_point(x_widget, y_widget)
+            if handle != ResizeHandle.NONE:
+                return ("handle", handle)
+
+        if self.selected_action and self._is_point_in_selection_bounds(x_image, y_image):
+            return ("move", self.selected_action)
+
+        action = self._find_action_at_point(x_image, y_image)
+        if action is not None:
+            return ("select", action)
+
+        return None
+
+    def _begin_edit_interaction(self, hit, x_image: int, y_image: int) -> None:
+        kind, value = hit
+        if kind == "handle":
+            self.is_resizing = True
+            self.resize_handle = value
+            self.resize_start_bounds = self.selected_action.get_bounds().get_bounding_rect()
+            self.resize_start_mouse = (x_image, y_image)
+            return
+
+        if kind == "select":
+            self.selected_action = value
+            self.queue_draw()
+
+        self.is_moving_selection = True
+        self.move_start_point = (x_image, y_image)
+
     def _find_action_at_point(self, x_image: int, y_image: int) -> DrawingAction | None:
         for action in reversed(self.actions):
             if action.contains_point(x_image, y_image):
@@ -413,6 +469,24 @@ class DrawingOverlay(Gtk.DrawingArea):
     def _on_click(self, gesture, n_press, x_widget, y_widget):
         original_x, original_y = x_widget, y_widget
         x_widget, y_widget = self.coordinate_transform(x_widget, y_widget)
+
+        # Clicking an existing element with a drawing tool selects it rather than
+        # stamping another one on top; existing text opens for editing instead.
+        if (self._mode_edits_existing() and n_press == 1
+                and self._is_point_in_image(x_widget, y_widget)):
+            img_x, img_y = self._widget_to_image_coords(x_widget, y_widget)
+            hit = self._existing_action_at(x_widget, y_widget, img_x, img_y)
+            if hit is not None:
+                self.grab_focus()
+                kind, value = hit
+                if kind == "select":
+                    self.selected_action = value
+                    self.queue_draw()
+                if (self.options.mode == DrawingMode.TEXT
+                        and isinstance(self.selected_action, TextAction)):
+                    self._start_text_edit(self.selected_action, original_x, original_y)
+                return
+
         if self.options.mode == DrawingMode.TEXT and self._is_point_in_image(x_widget, y_widget):
             self.grab_focus()
             if n_press == 1:
@@ -579,15 +653,27 @@ class DrawingOverlay(Gtk.DrawingArea):
 
     def _on_drag_begin(self, gesture, x_widget, y_widget):
         x_widget, y_widget = self.coordinate_transform(x_widget, y_widget)
-        if self.options.mode == DrawingMode.TEXT or self.options.mode == DrawingMode.NUMBER or self.text_entry_popup:
+        if self.text_entry_popup:
             return
         if not self._is_point_in_image(x_widget, y_widget):
             return
 
-        self.grab_focus()
         img_x, img_y = self._widget_to_image_coords(x_widget, y_widget)
-
         self.update_shift_state(gesture)
+
+        # An element already under the pointer gets moved or resized, whichever
+        # tool is active, instead of a second one being drawn on top of it.
+        if self._mode_edits_existing():
+            hit = self._existing_action_at(x_widget, y_widget, img_x, img_y)
+            if hit is not None:
+                self.grab_focus()
+                self._begin_edit_interaction(hit, img_x, img_y)
+                return
+
+        if self.options.mode == DrawingMode.TEXT or self.options.mode == DrawingMode.NUMBER:
+            return
+
+        self.grab_focus()
 
         if self.options.mode == DrawingMode.SELECT:
             if self.selected_action:
@@ -619,7 +705,8 @@ class DrawingOverlay(Gtk.DrawingArea):
 
     def _on_drag_update(self, gesture, dx_widget, dy_widget):
         dx_widget, dy_widget = self.delta_transform(dx_widget, dy_widget)
-        if self.options.mode == DrawingMode.TEXT or self.options.mode == DrawingMode.NUMBER:
+        editing = self.is_resizing or self.is_moving_selection
+        if not editing and self.options.mode in (DrawingMode.TEXT, DrawingMode.NUMBER):
             return
 
         start_x_raw, start_y_raw = gesture.get_start_point().x, gesture.get_start_point().y
@@ -629,13 +716,13 @@ class DrawingOverlay(Gtk.DrawingArea):
 
         self.update_shift_state(gesture)
 
-        if self.options.mode == DrawingMode.SELECT and self.is_resizing and self.selected_action and self.resize_start_bounds:
+        if self.is_resizing and self.selected_action and self.resize_start_bounds:
             self._resize_action(self.selected_action, self.resize_handle, self.resize_start_bounds,
                               self.resize_start_mouse, (img_x, img_y), self.current_shift_pressed)
             self.queue_draw()
             return
 
-        if self.options.mode == DrawingMode.SELECT and self.is_moving_selection and self.selected_action and self.move_start_point:
+        if self.is_moving_selection and self.selected_action and self.move_start_point:
             old_x_img, old_y_img = self.move_start_point
             delta_x_img = img_x - old_x_img
             delta_y_img = img_y - old_y_img
@@ -655,20 +742,22 @@ class DrawingOverlay(Gtk.DrawingArea):
 
     def _on_drag_end(self, gesture, dx_widget, dy_widget):
         dx_widget, dy_widget = self.delta_transform(dx_widget, dy_widget)
-        if self.options.mode == DrawingMode.TEXT or self.options.mode == DrawingMode.NUMBER:
+
+        if self.is_resizing:
+            self.is_resizing = False
+            self.resize_handle = ResizeHandle.NONE
+            self.resize_start_bounds = None
+            self.resize_start_mouse = None
+            self.redo_stack.clear()
+            self._update_undo_redo_action_states()
             return
 
-        if self.options.mode == DrawingMode.SELECT:
-            if self.is_resizing:
-                self.is_resizing = False
-                self.resize_handle = ResizeHandle.NONE
-                self.resize_start_bounds = None
-                self.resize_start_mouse = None
-                self.redo_stack.clear()
-                self._update_undo_redo_action_states()
-                return
+        if self.is_moving_selection:
             self.is_moving_selection = False
             self.move_start_point = None
+            return
+
+        if self.options.mode in (DrawingMode.TEXT, DrawingMode.NUMBER, DrawingMode.SELECT):
             return
 
         if not self.is_drawing:
@@ -707,26 +796,31 @@ class DrawingOverlay(Gtk.DrawingArea):
 
     def _on_motion(self, controller, x_widget, y_widget):
         x_widget, y_widget = self.coordinate_transform(x_widget, y_widget)
+        mode = self.options.mode
 
-        if self.options.mode == DrawingMode.TEXT:
-            name = "text" if self._is_point_in_image(x_widget, y_widget) else "default"
-
-        elif self.options.mode == DrawingMode.NUMBER:
-            name = "crosshair" if self._is_point_in_image(x_widget, y_widget) else "default"
-
-        elif self.options.mode == DrawingMode.CENSOR:
-            name = "crosshair" if self._is_point_in_image(x_widget, y_widget) else "default"
-
-        elif self.options.mode == DrawingMode.SELECT:
+        if mode == DrawingMode.SELECT:
             name = self._get_select_mode_cursor(x_widget, y_widget)
 
+        elif not self._is_point_in_image(x_widget, y_widget):
+            name = "default"
+
+        elif self._hovering_existing_action(x_widget, y_widget):
+            # Same feedback the select tool gives, because a press does the same.
+            name = self._get_select_mode_cursor(x_widget, y_widget)
+
+        elif mode == DrawingMode.TEXT:
+            name = "text"
+
         else:
-            if self._is_point_in_image(x_widget, y_widget):
-                name = "crosshair"
-            else:
-                name = "default"
+            name = "crosshair"
 
         self.set_cursor(Gdk.Cursor.new_from_name(name, None))
+
+    def _hovering_existing_action(self, x_widget: float, y_widget: float) -> bool:
+        if not self._mode_edits_existing() or self.is_drawing:
+            return False
+        img_x, img_y = self._widget_to_image_coords(x_widget, y_widget)
+        return self._existing_action_at(x_widget, y_widget, img_x, img_y) is not None
 
     def _get_select_mode_cursor(self, x_widget, y_widget):
         if self.is_resizing or self.is_moving_selection:

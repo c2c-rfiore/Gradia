@@ -63,14 +63,20 @@ template $GradiaImageStack: Adw.Bin {
 
           child: Gtk.Overlay main_overlay {
             [overlay]
-            Gtk.Box left_controls_container {
-              orientation: horizontal;
-              spacing: 6;
-              halign: start;
+            Adw.WrapBox bottom_controls {
+              halign: fill;
+              hexpand: true;
               valign: end;
               margin-bottom: 12;
               margin-start: 12;
-              hexpand: false;
+              margin-end: 12;
+              // One row while there is space, wrapping to more rows when the
+              // editor gets narrow, so the groups can never overlap.
+              justify: spread;
+              justify-last-line: true;
+              wrap-policy: natural;
+              child-spacing: 12;
+              line-spacing: 6;
 
               Gtk.Revealer crop_controls_revealer {
                 transition-type: slide_right;
@@ -187,6 +193,109 @@ template $GradiaImageStack: Adw.Bin {
                   }
                 }
               }
+
+              Gtk.Revealer right_controls_revealer {
+                transition-type: crossfade;
+                transition-duration: 300;
+                overflow: visible;
+
+                Gtk.Box right_controls_box {
+                  orientation: horizontal;
+                  spacing: 12;
+
+                  Gtk.Box zoom_controls {
+                    orientation: horizontal;
+
+                    styles [
+                      "osd-box",
+                    ]
+
+                    Revealer zoom_info_revealer {
+                      transition-type: slide_right;
+                      transition-duration: 300;
+
+                      Box {
+                        Gtk.Button reset_zoom_button {
+                          icon-name: "zoom-original-symbolic";
+                          tooltip-text: _("Reset Zoom");
+                          action-name: "win.reset-zoom";
+
+                          styles [
+                            "flat",
+                          ]
+                        }
+
+                        Gtk.Label zoom_label {
+                          label: "100%";
+                          margin-start: 4;
+                          width-chars: 5;
+                          xalign: 0.5;
+
+                          styles [
+                            "flat",
+                          ]
+                        }
+                      }
+                    }
+
+                    Gtk.Button zoom_out_button {
+                      icon-name: "zoom-minus-symbolic";
+                      tooltip-text: _("Zoom Out");
+                      action-name: "win.zoom-out";
+
+                      styles [
+                        "flat",
+                      ]
+                    }
+
+                    Gtk.Button zoom_in_button {
+                      icon-name: "zoom-plus-symbolic";
+                      tooltip-text: _("Zoom In");
+                      action-name: "win.zoom-in";
+
+                      styles [
+                        "flat",
+                      ]
+                    }
+                  }
+
+                  Gtk.Box {
+                    styles [
+                      "osd-box",
+                    ]
+
+                    Gtk.Button undo_button {
+                      icon-name: "edit-undo-symbolic";
+                      tooltip-text: _("Undo");
+                      action-name: "win.undo";
+
+                      styles [
+                        "flat",
+                      ]
+                    }
+
+                    Gtk.Button redo_button {
+                      icon-name: "edit-redo-symbolic";
+                      tooltip-text: _("Redo");
+                      action-name: "win.redo";
+
+                      styles [
+                        "flat",
+                      ]
+                    }
+
+                    Gtk.Button reset_button {
+                      icon-name: "user-trash-symbolic";
+                      tooltip-text: _("Clear All");
+                      action-name: "win.clear";
+
+                      styles [
+                        "flat",
+                      ]
+                    }
+                  }
+                }
+              }
             }
 
             [overlay]
@@ -218,115 +327,6 @@ template $GradiaImageStack: Adw.Bin {
               }
             }
 
-            [overlay]
-            Gtk.Revealer right_controls_revealer {
-              transition-type: crossfade;
-              transition-duration: 300;
-              halign: end;
-              valign: end;
-              margin-bottom: 12;
-              margin-end: 12;
-              overflow: visible;
-
-              Gtk.Box right_controls_box {
-                orientation: horizontal;
-                spacing: 12;
-                halign: end;
-
-                Gtk.Box zoom_controls {
-                  orientation: horizontal;
-
-                  styles [
-                    "osd-box",
-                  ]
-
-                  Revealer zoom_info_revealer {
-                    transition-type: slide_right;
-                    transition-duration: 300;
-
-                    Box {
-                      Gtk.Button reset_zoom_button {
-                        icon-name: "zoom-original-symbolic";
-                        tooltip-text: _("Reset Zoom");
-                        action-name: "win.reset-zoom";
-
-                        styles [
-                          "flat",
-                        ]
-                      }
-
-                      Gtk.Label zoom_label {
-                        label: "100%";
-                        margin-start: 4;
-                        margin-end: 4;
-                        width-chars: 5;
-                        xalign: 0.5;
-
-                        styles [
-                          "flat",
-                        ]
-                      }
-                    }
-                  }
-
-                  Gtk.Button zoom_out_button {
-                    icon-name: "zoom-minus-symbolic";
-                    tooltip-text: _("Zoom Out");
-                    action-name: "win.zoom-out";
-
-                    styles [
-                      "flat",
-                    ]
-                  }
-
-                  Gtk.Button zoom_in_button {
-                    icon-name: "zoom-plus-symbolic";
-                    tooltip-text: _("Zoom In");
-                    action-name: "win.zoom-in";
-
-                    styles [
-                      "flat",
-                    ]
-                  }
-                }
-
-                Gtk.Box {
-                  styles [
-                    "osd-box",
-                  ]
-
-                  Gtk.Button undo_button {
-                    icon-name: "edit-undo-symbolic";
-                    tooltip-text: _("Undo");
-                    action-name: "win.undo";
-
-                    styles [
-                      "flat",
-                    ]
-                  }
-
-                  Gtk.Button redo_button {
-                    icon-name: "edit-redo-symbolic";
-                    tooltip-text: _("Redo");
-                    action-name: "win.redo";
-
-                    styles [
-                      "flat",
-                    ]
-                  }
-
-                  Gtk.Button reset_button {
-                    icon-name: "user-trash-symbolic";
-                    tooltip-text: _("Clear All");
-                    action-name: "win.clear";
-
-                    styles [
-                      "flat",
-                    ]
-                  }
-                }
-              }
-            }
 
             child: $GradiaZoomController zoomable_widget {
               hexpand: true;

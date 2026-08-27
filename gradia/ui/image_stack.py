@@ -59,6 +59,7 @@ class ImageStack(Adw.Bin):
     back_button: Gtk.Revealer = Gtk.Template.Child()
     crop_button_revealer: Gtk.Revealer = Gtk.Template.Child()
     tools_revealer: Gtk.Revealer = Gtk.Template.Child()
+    bottom_controls: Adw.WrapBox = Gtk.Template.Child()
     drawing_tools_group: DrawingToolsGroup = Gtk.Template.Child()
 
     zoom_label: Gtk.Label = Gtk.Template.Child()

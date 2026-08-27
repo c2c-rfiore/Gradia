@@ -63,6 +63,8 @@ template $GradiaDrawingToolsGroup: Box {
 }
 
 Popover color_popover {
+  // Open upward: the bar sits at the bottom of the editor.
+  position: top;
   child: Box {
     margin-top: 6;
     margin-bottom: 6;
@@ -76,6 +78,8 @@ Popover color_popover {
 }
 
 Popover size_popover {
+  // Open upward: the bar sits at the bottom of the editor.
+  position: top;
   child: Box {
     orientation: vertical;
     spacing: 6;
@@ -112,6 +116,8 @@ Popover size_popover {
 }
 
 Popover options_popover {
+  // Open upward: the bar sits at the bottom of the editor.
+  position: top;
   child: Stack extra_stack {
     transition-type: crossfade;
     transition-duration: 200;
