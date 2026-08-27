@@ -30,10 +30,6 @@
       <summary>If images with same colored edges should be balanced</summary>
     </key>
 
-    <key name="expand-annotation-tools" type="b">
-      <default>true</default>
-      <summary>Whether the Annotation Tools section is unfolded</summary>
-    </key>
     <key name="expand-background" type="b">
       <default>true</default>
       <summary>Whether the Background section is unfolded</summary>

@@ -19,6 +19,7 @@ from gi.repository import Adw, Gio, Gtk, Gdk, GLib, GObject, Graphene
 
 from gradia.constants import rootdir
 from gradia.overlay.drawing_overlay import DrawingOverlay
+from gradia.ui.drawing_tools_group import DrawingToolsGroup
 from gradia.overlay.transparency_overlay import TransparencyBackground
 from gradia.overlay.crop_overlay import CropOverlay
 from gradia.overlay.drop_overlay import DropOverlay
@@ -57,6 +58,9 @@ class ImageStack(Adw.Bin):
     confirm_crop_revealer: Gtk.Revealer = Gtk.Template.Child()
     back_button: Gtk.Revealer = Gtk.Template.Child()
     crop_button_revealer: Gtk.Revealer = Gtk.Template.Child()
+    tools_revealer: Gtk.Revealer = Gtk.Template.Child()
+    bottom_controls: Adw.WrapBox = Gtk.Template.Child()
+    drawing_tools_group: DrawingToolsGroup = Gtk.Template.Child()
 
     zoom_label: Gtk.Label = Gtk.Template.Child()
     zoom_out_button: Gtk.Button = Gtk.Template.Child()
@@ -182,6 +186,8 @@ class ImageStack(Adw.Bin):
         if not self._compact:
             self._show_sidebar(not self.crop_enabled)
         self.crop_options_revealer.set_reveal_child(self.crop_enabled)
+        # Annotation tools have nothing to do while cropping.
+        self.tools_revealer.set_reveal_child(not self.crop_enabled)
 
         if self.crop_enabled:
             self._saved_crop_rect = self.crop_overlay.get_crop_rectangle()
@@ -190,6 +196,9 @@ class ImageStack(Adw.Bin):
         if self.crop_enabled and not self.crop_has_been_enabled:
             self.crop_overlay.set_crop_rectangle(0.1, 0.1, 0.8, 0.8)
             self.crop_has_been_enabled = True
+
+    def set_drawing_mode(self, mode) -> None:
+        self.drawing_tools_group.set_current_tool(mode)
 
     def crop_back(self) -> None:
         if self.crop_enabled:

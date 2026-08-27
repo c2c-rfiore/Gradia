@@ -31,8 +31,9 @@ class DrawingToolsGrid(Gtk.Grid):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.set_row_spacing(9)
-        self.set_column_spacing(18)
+        # One row: this grid is the tool section of the bottom toolbar.
+        self.set_row_spacing(0)
+        self.set_column_spacing(0)
         self.set_column_homogeneous(True)
         self.set_row_homogeneous(True)
 
@@ -54,25 +55,29 @@ class DrawingToolsGrid(Gtk.Grid):
         widget.disconnect_by_func(self._on_realize)
 
     def _create_tool_buttons(self):
-        tools = ToolConfig.get_all_tools_positions()
+        # Keep the order the grid positions imply, but lay them out in one row.
+        tools = sorted(
+            ToolConfig.get_all_tools_positions(),
+            key=lambda config: (config.row, config.column),
+        )
 
-        for tool_config in tools:
+        for index, tool_config in enumerate(tools):
             button = Gtk.ToggleButton(
                 icon_name=tool_config.icon,
                 tooltip_text=tool_config.mode.label(),
-                width_request=40,
-                height_request=40,
-                css_classes=["flat", "circular"]
+                width_request=34,
+                height_request=34,
+                css_classes=["flat"]
             )
 
-            button.get_first_child().set_pixel_size(18)
+            button.get_first_child().set_pixel_size(16)
 
             self._tool_configs[tool_config.mode] = tool_config
             self._buttons[tool_config.mode] = button
 
             button.connect("toggled", self._on_button_toggled, tool_config.mode)
 
-            self.attach(button, tool_config.column, tool_config.row, 1, 1)
+            self.attach(button, index, 0, 1, 1)
 
     def _on_button_toggled(self, button: Gtk.ToggleButton, mode: DrawingMode):
         if button.get_active():

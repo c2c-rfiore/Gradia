@@ -47,10 +47,7 @@ class BackgroundSelector(Adw.Bin):
     toggle_group: ToggleGroup = Gtk.Template.Child()
     stack: Gtk.Stack = Gtk.Template.Child()
     stack_revealer: Gtk.Revealer = Gtk.Template.Child()
-    preset_button: Gtk.MenuButton = Gtk.Template.Child()
-    header_button: Gtk.Button = Gtk.Template.Child()
-    header_chevron: Gtk.Image = Gtk.Template.Child()
-    body_revealer: Gtk.Revealer = Gtk.Template.Child()
+    background_expander: Adw.ExpanderRow = Gtk.Template.Child()
 
     def __init__(
         self,
@@ -72,6 +69,8 @@ class BackgroundSelector(Adw.Bin):
         self._applying_preset = False
         self._preset_rows: list[Gtk.ListBoxRow] = []
         self._preset_list_busy = False
+        # Owned by the sidebar, which shows it above the sections.
+        self.preset_button: Optional[Gtk.MenuButton] = None
         self._image_options_getter: Optional[ImageOptionsGetter] = None
         self._image_options_applier: Optional[ImageOptionsApplier] = None
 
@@ -96,9 +95,7 @@ class BackgroundSelector(Adw.Bin):
         self._update_revealer_visibility()
         self._setup_preset_popover()
         self._refresh_presets()
-        self.settings.bind_boolean(self.body_revealer, "reveal-child", "expand-background")
-        self.body_revealer.connect("notify::reveal-child", self._on_body_revealed)
-        self._on_body_revealed()
+        self.settings.bind_boolean(self.background_expander, "expanded", "expand-background")
 
     def _setup_preset_popover(self) -> None:
         """Build the preset popover: New Preset first, then the presets, then rename/delete."""
@@ -141,7 +138,6 @@ class BackgroundSelector(Adw.Bin):
         box.append(self.delete_preset_button)
 
         self.preset_popover.set_child(box)
-        self.preset_button.set_popover(self.preset_popover)
 
     def _popover_button(self, label: str, icon_name: str, handler) -> Gtk.Button:
         content = Gtk.Box(spacing=12)
@@ -172,18 +168,11 @@ class BackgroundSelector(Adw.Bin):
             self.save_active_preset()
             self._notify_current()
 
-    @Gtk.Template.Callback()
-    def _on_header_clicked(self, _button: Gtk.Button) -> None:
-        self.body_revealer.set_reveal_child(not self.body_revealer.get_reveal_child())
-
-    def _on_body_revealed(self, *_args) -> None:
-        expanded = self.body_revealer.get_reveal_child()
-        self.header_chevron.set_from_icon_name(
-            "pan-down-symbolic" if expanded else "pan-end-symbolic"
-        )
-        self.header_button.set_tooltip_text(
-            _("Fold Background Options") if expanded else _("Unfold Background Options")
-        )
+    def attach_preset_button(self, button: Gtk.MenuButton) -> None:
+        """Adopt the preset button the sidebar shows above the sections."""
+        self.preset_button = button
+        button.set_popover(self.preset_popover)
+        self._refresh_presets()
 
     def _on_preset_row_activated(self, _list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         if self._preset_list_busy:
@@ -308,7 +297,8 @@ class BackgroundSelector(Adw.Bin):
         finally:
             self._preset_list_busy = False
 
-        self.preset_button.set_label(self.preset_store.active.name)
+        if self.preset_button is not None:
+            self.preset_button.set_label(self.preset_store.active.name)
         self.delete_preset_button.set_sensitive(len(self.preset_store.presets) > 1)
 
     """
