@@ -147,12 +147,46 @@ class PreviewApplication(Adw.Application):
         return monitor_at(monitors, self.placement.pointer_position())
 
     def open_in_editor(self, file_path: str) -> None:
+        """Hand the file to the editor, reusing a running one where possible.
+
+        Spawning the launcher means a cold Python and GTK start, which is slow
+        enough to notice. If an editor is already on the bus, activating its
+        "open" action instead is effectively instant.
+        """
+        if self._activate_editor_action(file_path):
+            return
+        self._spawn_editor(file_path)
+
+    def _activate_editor_action(self, file_path: str) -> bool:
+        object_path = "/" + app_id.replace(".", "/")
+        try:
+            # Reuse the connection this application already holds; opening a new
+            # one costs a few hundred milliseconds.
+            bus = self.get_dbus_connection() or Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            bus.call_sync(
+                app_id,
+                object_path,
+                "org.gtk.Actions",
+                "Activate",
+                GLib.Variant("(sava{sv})", ("open", [GLib.Variant("s", file_path)], {})),
+                None,
+                Gio.DBusCallFlags.NO_AUTO_START,
+                1500,
+                None,
+            )
+            logging.info(f"Handed {file_path} to the running editor.")
+            return True
+        except GLib.Error as e:
+            logging.debug(f"No running editor to hand {file_path} to ({e.message}).")
+            return False
+
+    def _spawn_editor(self, file_path: str) -> None:
         try:
             Gio.Subprocess.new(
                 [*self.editor_command, file_path],
                 Gio.SubprocessFlags.NONE,
             )
-            logging.info(f"Opening {file_path} in the editor.")
+            logging.info(f"Starting the editor for {file_path}.")
         except GLib.Error as e:
             logging.warning(f"Could not open {file_path} in the editor.", exception=e)
 
