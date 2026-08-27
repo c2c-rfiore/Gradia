@@ -30,6 +30,7 @@ from gi.repository import Adw, Gio, GLib, Xdp
 from gradia.constants import app_id, rootdir  # pyright: ignore
 from gradia.ui.window import GradiaMainWindow
 from gradia.ui.pin_window import PinWindow
+from gradia.backend.preview_spawner import spawn_preview
 from gradia.ui.dialog.ocr_launcher import present_ocr_dialog
 from gradia.backend.logger import Logger
 from gradia.backend.ocr import OCR
@@ -134,7 +135,9 @@ class GradiaApp(Adw.Application):
             for path in files_to_open:
                 self._open_window(file_path=path)
         elif screenshot_file:
-            self._open_window(start_screenshot=screenshot_file)
+            # A capture shows a floating preview; the editor opens from its Edit button.
+            if not spawn_preview(screenshot_file):
+                self._open_window(start_screenshot=screenshot_file)
         else:
             self.activate()
 

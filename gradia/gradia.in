@@ -72,6 +72,19 @@ class QuickStartScreenshotTaker:
         self._loop.run()
         return self._result_path
 if __name__ == '__main__':
+    # The screenshot previews need the XWayland backend to place themselves, so
+    # they run as their own process. Handle that before touching GTK.
+    if any(arg.startswith('--preview-file=') for arg in sys.argv[1:]):
+        os.environ['GDK_BACKEND'] = 'x11'
+        gi.require_version('Gtk', '4.0')
+        gi.require_version('Adw', '1')
+        from gi.repository import Gio
+        GLib.set_prgname('gradia-preview')
+        resource = Gio.Resource.load(os.path.join(pkgdatadir, 'gradia.gresource'))
+        resource._register()
+        from gradia import preview_app
+        sys.exit(preview_app.main(editor_command=[sys.argv[0]]))
+
     # handle screenshots on open
     mode = None
     delay = 0

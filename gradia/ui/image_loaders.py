@@ -25,6 +25,7 @@ from gi.repository import Gtk, Gio, Gdk, GLib, Xdp
 from gradia.clipboard import save_texture_to_file
 from gradia.ui.image_creation.source_image_generator import SourceImageGeneratorWindow
 from gradia.utils.timestamp_filename import TimestampedFilenameGenerator
+from gradia.backend.preview_spawner import spawn_preview
 from gradia.backend.logger import Logger
 from gradia.graphics.loaded_image import LoadedImage, ImageOrigin
 from typing import Optional, Callable
@@ -283,21 +284,14 @@ class ScreenshotImageLoader(BaseImageLoader):
             self._error_callback = None
 
     def _handle_screenshot_uri(self, uri: str) -> None:
+        """Show a floating preview; the editor only opens from the preview's Edit button."""
         try:
             file = Gio.File.new_for_uri(uri)
             original_path = file.get_path()
-            success, contents, _unused = file.load_contents(None)
-            if not success or not contents:
-                raise Exception("Failed to load screenshot data")
+            if not original_path:
+                raise Exception("Screenshot URI has no local path")
 
-            filename = TimestampedFilenameGenerator().generate(_("Edited Screenshot From %Y-%m-%d %H-%M-%S")) + ".png"
-            temp_path = os.path.join(self.temp_dir, filename)
-
-            with open(temp_path, 'wb') as f:
-                f.write(contents)
-
-            self._set_image_and_update_ui(temp_path, ImageOrigin.Screenshot, screenshot_path=original_path, copy_after_processing=True)
-            self.window._show_notification(_("Screenshot captured!"))
+            spawn_preview(original_path)
 
             if self._success_callback:
                 self._success_callback()

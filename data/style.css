@@ -346,3 +346,21 @@ image.symbolic-circular {
 .destructive-label label {
   color: @error_color;
 }
+
+/* Floating screenshot previews. The window itself is transparent so the cards'
+   rounded corners show through; the whole stack is dimmed slightly until hovered. */
+.screenshot-preview-window {
+  background: transparent;
+}
+
+.screenshot-preview-card {
+  background-color: alpha(@window_bg_color, 0.82);
+  border: 1px solid alpha(@borders, 0.6);
+  border-radius: 18px;
+  box-shadow: 0 4px 16px alpha(black, 0.35);
+}
+
+.screenshot-preview-thumb {
+  border-radius: 12px;
+  background-color: alpha(black, 0.25);
+}

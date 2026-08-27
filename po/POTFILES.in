@@ -53,6 +53,7 @@ gradia/ui/preferences/preferences_window.py
 gradia/ui/preferences/provider_selection_window.py
 gradia/ui/provider_selection_window.py
 gradia/ui/recent_picker.py
+gradia/ui/screenshot_preview.py
 gradia/ui/ui_parts.py
 gradia/ui/welcome_page.py
 gradia/ui/widget/angle_selector.py
