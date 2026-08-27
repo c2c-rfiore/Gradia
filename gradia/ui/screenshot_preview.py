@@ -22,6 +22,7 @@ their own: each one stays until it is deleted, opened in the editor, or closed.
 """
 
 import os
+from math import ceil
 from typing import Callable, Optional
 
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
@@ -31,10 +32,12 @@ from gradia.backend.x11_placement import X11Placement
 
 logging = Logger()
 
-# Deterministic geometry: the stack computes its own height so it can be placed
-# before the compositor has told us anything about the allocation.
-THUMB_MAX_WIDTH = 260
-THUMB_MAX_HEIGHT = 170
+# Every preview is the same size whatever the screenshot's shape: the image is
+# scaled to cover the box and centre-cropped to it. That also keeps the stack
+# geometry deterministic, so it can be placed before the compositor has told us
+# anything about the allocation.
+THUMB_WIDTH = 260
+THUMB_HEIGHT = 170
 ACTION_ROW_HEIGHT = 40
 CARD_PADDING = 8
 CARD_SPACING = 10
@@ -58,8 +61,6 @@ class ScreenshotPreviewCard(Gtk.Box):
         self.file_path = file_path
         self._on_edit = on_edit
         self._on_removed = on_removed
-        self.thumb_width = THUMB_MAX_WIDTH
-        self.thumb_height = THUMB_MAX_HEIGHT
 
         self.add_css_class("screenshot-preview-card")
         self.set_margin_top(CARD_PADDING)
@@ -70,35 +71,58 @@ class ScreenshotPreviewCard(Gtk.Box):
         self._build_thumbnail()
         self._build_actions()
 
+    # Constant, because every card is the same size.
+    TOTAL_HEIGHT = THUMB_HEIGHT + ACTION_ROW_HEIGHT + CARD_SPACING + 2 * CARD_PADDING
+    TOTAL_WIDTH = THUMB_WIDTH + 2 * CARD_PADDING
+
     @property
     def total_height(self) -> int:
-        return self.thumb_height + ACTION_ROW_HEIGHT + CARD_SPACING + 2 * CARD_PADDING
+        return self.TOTAL_HEIGHT
 
     def _build_thumbnail(self) -> None:
         picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER)
+        picture.set_size_request(THUMB_WIDTH, THUMB_HEIGHT)
 
-        try:
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file(self.file_path)
-            width, height = pixbuf.get_width(), pixbuf.get_height()
-            scale = min(THUMB_MAX_WIDTH / width, THUMB_MAX_HEIGHT / height, 1.0)
-            self.thumb_width = max(1, int(width * scale))
-            self.thumb_height = max(1, int(height * scale))
-            picture.set_pixbuf(
-                pixbuf.scale_simple(
-                    self.thumb_width, self.thumb_height, GdkPixbuf.InterpType.BILINEAR
-                )
-            )
-        except Exception as e:
-            logging.warning(f"Could not load preview thumbnail for {self.file_path}.", exception=e)
-            self.thumb_width, self.thumb_height = THUMB_MAX_WIDTH, THUMB_MAX_HEIGHT
-
-        picture.set_size_request(self.thumb_width, self.thumb_height)
+        thumbnail = self._cover_crop(self.file_path)
+        if thumbnail is not None:
+            picture.set_pixbuf(thumbnail)
 
         frame = Gtk.Box(halign=Gtk.Align.CENTER)
         frame.add_css_class("screenshot-preview-thumb")
         frame.set_overflow(Gtk.Overflow.HIDDEN)
+        frame.set_size_request(THUMB_WIDTH, THUMB_HEIGHT)
         frame.append(picture)
         self.append(frame)
+
+    @staticmethod
+    def _cover_crop(file_path: str) -> Optional[GdkPixbuf.Pixbuf]:
+        """Fill exactly THUMB_WIDTH x THUMB_HEIGHT, cropping rather than distorting."""
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file(file_path)
+        except Exception as e:
+            logging.warning(f"Could not load preview thumbnail for {file_path}.", exception=e)
+            return None
+
+        width, height = pixbuf.get_width(), pixbuf.get_height()
+        if width <= 0 or height <= 0:
+            return None
+
+        # Scale up to cover the box, then take the middle of it.
+        scale = max(THUMB_WIDTH / width, THUMB_HEIGHT / height)
+        scaled_width = max(THUMB_WIDTH, ceil(width * scale))
+        scaled_height = max(THUMB_HEIGHT, ceil(height * scale))
+
+        scaled = pixbuf.scale_simple(scaled_width, scaled_height, GdkPixbuf.InterpType.BILINEAR)
+        if scaled is None:
+            return None
+
+        return GdkPixbuf.Pixbuf.new_subpixbuf(
+            scaled,
+            (scaled_width - THUMB_WIDTH) // 2,
+            (scaled_height - THUMB_HEIGHT) // 2,
+            THUMB_WIDTH,
+            THUMB_HEIGHT,
+        )
 
     def _build_actions(self) -> None:
         row = Gtk.Box(spacing=6, height_request=ACTION_ROW_HEIGHT)
@@ -140,8 +164,8 @@ class ScreenshotPreviewCard(Gtk.Box):
         self._on_removed(self)
 
     def _on_edit_clicked(self, _button: Gtk.Button) -> None:
+        # The preview outlives the editor: only its own close button dismisses it.
         self._on_edit(self.file_path)
-        self._on_removed(self)
 
     def _on_close_clicked(self, _button: Gtk.Button) -> None:
         self._on_removed(self)
@@ -216,8 +240,7 @@ class ScreenshotPreviewStack(Gtk.Window):
 
     @property
     def stack_width(self) -> int:
-        widest = max((card.thumb_width for card in self.cards), default=THUMB_MAX_WIDTH)
-        return widest + 2 * CARD_PADDING
+        return ScreenshotPreviewCard.TOTAL_WIDTH
 
     @property
     def stack_height(self) -> int:
