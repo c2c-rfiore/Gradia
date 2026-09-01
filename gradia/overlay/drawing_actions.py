@@ -20,6 +20,7 @@ import cairo
 from typing import Callable
 from gi.repository import Gtk, Gdk, Gio, Pango, PangoCairo, GdkPixbuf
 from enum import Enum
+import copy
 import math
 from gradia.backend.logger import Logger
 from gradia.utils.colors import has_visible_color
@@ -146,6 +147,12 @@ class DrawingAction:
     def translate(self, dx: int, dy: int):
         raise NotImplementedError
 
+    def copy(self) -> "DrawingAction":
+        """A standalone duplicate: same geometry, but nothing mutable shared."""
+        clone = copy.copy(self)
+        clone.options = self.options.copy()
+        return clone
+
     def get_drawing_mode(self) -> DrawingMode:
         return self.options.mode
 
@@ -201,6 +208,12 @@ class StrokeAction(DrawingAction):
     def translate(self, dx: int, dy: int):
         self.stroke = [(x + dx, y + dy) for x, y in self.stroke]
         self._bounds = None
+
+    def copy(self) -> "StrokeAction":
+        clone = super().copy()
+        clone.stroke = list(self.stroke)
+        clone._bounds = None
+        return clone
 
 
 class ArrowAction(DrawingAction):
@@ -777,3 +790,9 @@ class NumberStampAction(DrawingAction):
 
     def translate(self, dx: int, dy: int):
         self.position = (self.position[0] + dx, self.position[1] + dy)
+
+    def copy(self) -> "NumberStampAction":
+        clone = super().copy()
+        # Renumbering sorts on creation time, so a duplicate takes the last number.
+        clone.creation_time = time.time()
+        return clone

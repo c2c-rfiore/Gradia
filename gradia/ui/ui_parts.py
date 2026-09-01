@@ -107,6 +107,8 @@ class ShortcutsDialog:
                 (_("Undo"), "<Ctrl>Z"),
                 (_("Redo"), "<Ctrl><Shift>Z"),
                 (_("Erase Selected"), "Delete"),
+                (_("Copy Selected"), "<Ctrl>C"),
+                (_("Paste Copy"), "<Ctrl>V"),
                 (_("Select"), "0 S"),
                 (_("Pen"), "1 P"),
                 (_("Text"), "2 T"),

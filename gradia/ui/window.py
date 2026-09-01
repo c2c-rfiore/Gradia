@@ -99,6 +99,7 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         self.processor: ImageProcessor = ImageProcessor()
         self._setup_actions()
         self._setup_image_stack()
+        self._setup_clipboard_handoff()
         self._setup_sidebar()
         self._setup()
 
@@ -125,7 +126,7 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         self.create_action("open", lambda *_: self.import_manager.open_file_dialog(), ["<Primary>o"])
         self.create_action("create-source-image", lambda *_: self.import_manager.generate_from_source_code(), ["<Primary>p"])
         self.create_action("load-drop", self.import_manager._on_drop_action, vt="s")
-        self.create_action("paste", lambda *_: self.import_manager.load_from_clipboard(), ["<Primary>v"])
+        self.create_action("paste", lambda *_: self._paste(), ["<Primary>v"])
         self.create_action("screenshot", lambda *_: self.import_manager.take_screenshot(), ["<Primary>a"])
         self.create_action("open-path", lambda action, param: self.import_manager.load_from_file(param.get_string()), vt="s")
 
@@ -138,7 +139,7 @@ class GradiaMainWindow(Adw.ApplicationWindow):
 
         self.create_action("open-folder", lambda *_: self.open_loaded_image_folder(), enabled=False)
         self.create_action("save", lambda *_: self.export_manager.save_to_file(), ["<Primary>s"], enabled=False)
-        self.create_action("copy", lambda *_: self.export_manager.copy_to_clipboard(), ["<Primary>c"], enabled=False)
+        self.create_action("copy", lambda *_: self._copy(), ["<Primary>c"], enabled=False)
         self.create_action("command", lambda *_: self._run_custom_command(), ["<Primary>m"])
 
         self.create_action("aspect-ratio-crop", lambda _, variant: self.image_bin.set_aspect_ratio(variant.get_double()), vt="d")
@@ -180,6 +181,14 @@ class GradiaMainWindow(Adw.ApplicationWindow):
     """
     Setup Methods
     """
+
+    def _setup_clipboard_handoff(self) -> None:
+        """Copying anything else hands Ctrl+V back to importing an image."""
+        display = Gdk.Display.get_default()
+        if display:
+            display.get_clipboard().connect(
+                "changed", lambda *_: self.drawing_overlay.forget_copied_action()
+            )
 
     def _setup_image_stack(self) -> None:
         self.image_bin = ImageStack()
@@ -426,6 +435,19 @@ class GradiaMainWindow(Adw.ApplicationWindow):
     def _update_processed_image_size(self, width, height) -> None:
         size_str: str = f"{width}×{height}"
         self.sidebar.processed_size_row.set_subtitle(size_str)
+
+    def _copy(self) -> None:
+        # A selected annotation is the narrower target: copy that, not the whole image.
+        if self.drawing_overlay.copy_selected_action():
+            self._show_notification(_("Annotation Copied"))
+            return
+        self.export_manager.copy_to_clipboard()
+
+    def _paste(self) -> None:
+        # Importing an image throws the annotations away, so a copied one wins.
+        if self.drawing_overlay.paste_copied_action():
+            return
+        self.import_manager.load_from_clipboard()
 
     def _show_notification(self, message: str,action_label: str | None = None,action_callback: Callable[[], None] | None = None) -> None:
         if self.toast_overlay:
