@@ -17,9 +17,10 @@
 
 """Floating screenshot previews, stacked in a corner of the screen.
 
-One window per monitor holds a vertical stack of cards. Cards never expire on
-their own: each one stays until it is deleted or dismissed, and opening it in
-the editor leaves it in place.
+A single window holds a vertical stack of cards, pinned to the corner of the
+monitor being used and moved to another when the user goes there. Cards never
+expire on their own: each one stays until it is deleted or dismissed, and
+opening it in the editor leaves it in place.
 """
 
 import os
@@ -193,7 +194,11 @@ class ScreenshotPreviewCard(Gtk.Box):
 
 
 class ScreenshotPreviewStack(Gtk.Window):
-    """The floating stack of previews anchored to one monitor's bottom-left corner."""
+    """The floating stack of previews, pinned to a monitor's bottom-left corner.
+
+    There is only ever one of these. Which monitor it sits on is not fixed:
+    :meth:`set_monitor` moves it, cards and all, when the user moves screens.
+    """
 
     __gtype_name__ = "GradiaScreenshotPreviewStack"
 
@@ -214,7 +219,7 @@ class ScreenshotPreviewStack(Gtk.Window):
         self._revealers: dict[ScreenshotPreviewCard, Gtk.Revealer] = {}
         self._settling = 0
         self._tick_id: Optional[int] = None
-        self._last_y: Optional[int] = None
+        self._last_position: Optional[tuple[int, int]] = None
         self._kept_above = False
         self._reported_empty = False
 
@@ -290,6 +295,23 @@ class ScreenshotPreviewStack(Gtk.Window):
     remaining cards fall into the gap rather than hang in the air.
     """
 
+    def set_monitor(self, monitor: Gdk.Monitor) -> None:
+        """Move the whole stack onto another monitor.
+
+        Only the corner it is pinned to changes: the same window carries the same
+        cards across, so the stack reads as having followed the user rather than
+        having been torn down and built again on the other screen.
+        """
+        # is_valid matters on replug: the connector comes back under the same
+        # name, but the monitor held here is the dead one and its geometry with
+        # it, so an identical name is not on its own a reason to stay put.
+        if (monitor.get_connector() == self.monitor.get_connector()
+                and self.monitor.is_valid()):
+            return
+
+        self.monitor = monitor
+        self._pin_bottom(exact=True)
+
     @property
     def stack_width(self) -> int:
         return ScreenshotPreviewCard.TOTAL_WIDTH
@@ -347,9 +369,11 @@ class ScreenshotPreviewStack(Gtk.Window):
         x = geometry.x + SCREEN_MARGIN
         y = geometry.y + geometry.height - height - SCREEN_MARGIN
 
-        if y != self._last_y:
+        # Compared on both axes: monitors side by side share a bottom edge, so
+        # moving between them changes x alone.
+        if (x, y) != self._last_position:
             self.placement.move(xid, x, y)
-            self._last_y = y
+            self._last_position = (x, y)
 
         # Once is enough; this runs on every frame while the stack settles.
         if not self._kept_above:

@@ -22,6 +22,15 @@ XWayland backend, which is the only way to anchor a window to a screen corner
 and keep it above other windows on GNOME. Being a unique GApplication also means
 later screenshots reach the already-running stack through the ordinary
 command-line hand-off, with no IPC of our own.
+
+There is one stack, not one per monitor. Each screenshot names the screen it was
+taken on, and the stack moves there, cards and all, so the previews are only ever
+on the screen being worked on and never left behind on the one just used.
+
+The screen is named on the command line rather than worked out here: deciding it
+needs the Wayland backend (see gradia.backend.monitor_probe) and this process is
+pinned to XWayland. Without a name — an X11 session, or a probe that did not
+answer — the pointer is used instead, which is accurate on X11.
 """
 
 import os
@@ -31,17 +40,20 @@ from typing import Optional
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from gradia.backend.logger import Logger
+from gradia.backend.preview_spawner import MONITOR_ARG, PREVIEW_ARG
 from gradia.backend.x11_placement import X11Placement
 from gradia.constants import app_id, rootdir  # pyright: ignore
 from gradia.ui.screenshot_preview import ScreenshotPreviewStack
 
 logging = Logger()
 
-PREVIEW_ARG = "--preview-file="
-
-
 def monitor_at(monitors: list, pointer: Optional[tuple[int, int]]):
     """The monitor holding the pointer, falling back to the first one.
+
+    Only reached when the screen was not named on the command line. The first
+    monitor stands in where the pointer is unknown or in the dead space an
+    L-shaped layout leaves between screens, because a preview has to appear
+    somewhere.
 
     Kept separate from the display so multi-monitor placement can be tested
     without a second screen attached.
@@ -61,7 +73,7 @@ def monitor_at(monitors: list, pointer: Optional[tuple[int, int]]):
 
 
 class PreviewApplication(Adw.Application):
-    """Holds one preview stack per monitor."""
+    """Holds the one preview stack and keeps it on the screen being used."""
 
     def __init__(self, editor_command: Optional[list[str]] = None) -> None:
         super().__init__(
@@ -70,7 +82,7 @@ class PreviewApplication(Adw.Application):
         )
         self.editor_command = editor_command or [sys.argv[0]]
         self.placement = X11Placement()
-        self.stacks: dict[str, ScreenshotPreviewStack] = {}
+        self.stack: Optional[ScreenshotPreviewStack] = None
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -86,35 +98,33 @@ class PreviewApplication(Adw.Application):
             )
 
     def do_command_line(self, command_line: Gio.ApplicationCommandLine) -> int:
-        paths = [
-            arg[len(PREVIEW_ARG):]
-            for arg in command_line.get_arguments()[1:]
-            if arg.startswith(PREVIEW_ARG)
-        ]
+        arguments = command_line.get_arguments()[1:]
+        paths = [a[len(PREVIEW_ARG):] for a in arguments if a.startswith(PREVIEW_ARG)]
+        named = [a[len(MONITOR_ARG):] for a in arguments if a.startswith(MONITOR_ARG)]
 
         if not paths:
             logging.warning("Preview process started with no --preview-file argument.")
             return 0
 
         for path in paths:
-            self.show_preview(path)
+            self.show_preview(path, named[-1] if named else None)
         return 0
 
     """
     Previews
     """
 
-    def show_preview(self, file_path: str) -> None:
+    def show_preview(self, file_path: str, connector: Optional[str] = None) -> None:
         if not os.path.exists(file_path):
             logging.warning(f"Preview requested for a file that is not there: {file_path}")
             return
 
-        monitor = self._monitor_for_pointer()
+        monitor = self._monitor_for(connector)
         if monitor is None:
             logging.warning("No monitor available for the screenshot preview.")
             return
 
-        stack = self._stack_for(monitor)
+        stack = self._stack_on(monitor)
         stack.add_screenshot(file_path)
         stack.present()
         logging.info(
@@ -122,28 +132,40 @@ class PreviewApplication(Adw.Application):
             f"({len(stack.cards)} in the stack)"
         )
 
-    def _stack_for(self, monitor: Gdk.Monitor) -> ScreenshotPreviewStack:
-        key = monitor.get_connector() or "default"
-        stack = self.stacks.get(key)
-        if stack is None:
-            stack = ScreenshotPreviewStack(
+    def _stack_on(self, monitor: Gdk.Monitor) -> ScreenshotPreviewStack:
+        """The one stack there is, brought onto ``monitor`` if it is elsewhere."""
+        if self.stack is None:
+            self.stack = ScreenshotPreviewStack(
                 monitor=monitor,
                 placement=self.placement,
                 on_edit=self.open_in_editor,
-                on_empty=lambda s, key=key: self.stacks.pop(key, None),
+                on_empty=self._stack_emptied,
             )
-            self.add_window(stack)
-            self.stacks[key] = stack
-        return stack
+            self.add_window(self.stack)
+        else:
+            self.stack.set_monitor(monitor)
+        return self.stack
 
-    def _monitor_for_pointer(self) -> Optional[Gdk.Monitor]:
-        """Stack on the monitor the pointer is on, so previews follow the user."""
+    def _stack_emptied(self, _stack: ScreenshotPreviewStack) -> None:
+        self.stack = None
+
+    def _monitor_for(self, connector: Optional[str]) -> Optional[Gdk.Monitor]:
+        """The screen to stack on: the one named, else wherever the pointer is."""
         display = Gdk.Display.get_default()
         if display is None:
             return None
 
         monitor_list = display.get_monitors()
         monitors = [monitor_list.get_item(i) for i in range(monitor_list.get_n_items())]
+        if not monitors:
+            return None
+
+        if connector:
+            for monitor in monitors:
+                if monitor.get_connector() == connector:
+                    return monitor
+            logging.warning(f"No monitor named {connector} is attached; using the pointer.")
+
         return monitor_at(monitors, self.placement.pointer_position())
 
     def open_in_editor(self, file_path: str) -> None:
