@@ -20,10 +20,6 @@
 The preview lives in its own process because it needs the XWayland backend. It
 is a unique GApplication, so the first call starts it and later calls are
 forwarded to the running stack by GApplication itself.
-
-Which screen to put it on is worked out here rather than there. Deciding it needs
-the Wayland backend (see gradia.backend.monitor_probe), which the preview process
-cannot have, but this process does.
 """
 
 import os
@@ -34,14 +30,12 @@ from typing import Optional
 from gi.repository import Gio, GLib
 
 from gradia.backend.logger import Logger
-from gradia.backend.monitor_probe import active_monitor_connector
 
 logging = Logger()
 
-# The flags the two processes speak to each other. The preview side imports
-# these, so the spelling lives in exactly one place.
+# The flag the two processes speak to each other. The preview side imports it,
+# so the spelling lives in exactly one place.
 PREVIEW_ARG = "--preview-file="
-MONITOR_ARG = "--preview-monitor="
 
 
 def _launcher_path() -> Optional[str]:
@@ -63,20 +57,12 @@ def spawn_preview(file_path: str) -> bool:
         logging.warning("Could not locate the gradia launcher; skipping the preview.")
         return False
 
-    arguments = [launcher, f"{PREVIEW_ARG}{file_path}"]
-
-    # Asked for now, while the screenshot has just been taken and the screen the
-    # user is on is still the screen they took it on.
-    connector = active_monitor_connector()
-    if connector:
-        arguments.append(f"{MONITOR_ARG}{connector}")
-
     try:
-        Gio.Subprocess.new(arguments, Gio.SubprocessFlags.NONE)
-        logging.info(
-            f"Screenshot preview requested for {file_path}"
-            + (f" on {connector}" if connector else " (screen undetermined)")
+        Gio.Subprocess.new(
+            [launcher, f"{PREVIEW_ARG}{file_path}"],
+            Gio.SubprocessFlags.NONE,
         )
+        logging.info(f"Screenshot preview requested for {file_path}")
         return True
     except GLib.Error as e:
         logging.warning("Could not start the screenshot preview.", exception=e)
