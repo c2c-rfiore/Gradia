@@ -92,6 +92,9 @@ class DrawingOverlay(Gtk.DrawingArea):
         self.resize_start_bounds = None
         self.resize_start_mouse = None
 
+        self._action_clipboard: DrawingAction | None = None
+        self._paste_count = 0
+
         self.text_entry_popup = None
         self.text_position = None
         self.is_text_editing = False
@@ -345,6 +348,66 @@ class DrawingOverlay(Gtk.DrawingArea):
             return True
         return False
 
+    # A duplicate lands offset from its original, so it reads as a second element
+    # rather than looking like nothing happened.
+    PASTE_OFFSET_IMG = 20
+
+    def copy_selected_action(self) -> bool:
+        """Put the selected element on the element clipboard. False if nothing is selected."""
+        if not self.selected_action:
+            return False
+        self._action_clipboard = self.selected_action.copy()
+        self._paste_count = 0
+        return True
+
+    def paste_copied_action(self) -> bool:
+        """Drop a duplicate of the element clipboard on the canvas and select it."""
+        if self._action_clipboard is None:
+            return False
+
+        pasted = self._action_clipboard.copy()
+        self._paste_count += 1
+        offset = self._paste_offset(pasted, self.PASTE_OFFSET_IMG * self._paste_count)
+        pasted.translate(offset, offset)
+        self.actions.append(pasted)
+
+        if isinstance(pasted, NumberStampAction):
+            self._renumber_actions()
+
+        self.redo_stack.clear()
+        self._update_undo_redo_action_states()
+        # A tool only touches its own elements, so hand over to the one that owns
+        # what was just pasted, or it could not be moved.
+        self._activate_tool_for(pasted)
+        self.selected_action = pasted
+        self.queue_draw()
+        return True
+
+    def forget_copied_action(self) -> None:
+        self._action_clipboard = None
+        self._paste_count = 0
+
+    def _paste_offset(self, action: DrawingAction, offset: int) -> int:
+        """Shift the duplicate clear of its original, but never off the image."""
+        image_width, image_height = self._get_modified_image_bounds()
+        if image_width <= 0 or image_height <= 0:
+            return offset
+        _, _, max_x, max_y = action.get_bounds().get_bounding_rect()
+        room = min(image_width / 2 - max_x, image_height / 2 - max_y)
+        return int(max(0, min(offset, room)))
+
+    def _activate_tool_for(self, action: DrawingAction) -> None:
+        mode = action.get_drawing_mode()
+        # The select tool already reaches every element, so leave it alone.
+        if mode == self.options.mode or self.options.mode == DrawingMode.SELECT:
+            return
+        root = self.get_root()
+        if root is not None and hasattr(root, "image_bin"):
+            # Via the window, so the toolbar's tool button follows along.
+            root.image_bin.set_drawing_mode(mode)
+        else:
+            self.set_drawing_mode(mode)
+
     def set_drawing_mode(self, mode: DrawingMode) -> None:
         if self.text_entry_popup:
             self._close_text_entry()
@@ -370,17 +433,27 @@ class DrawingOverlay(Gtk.DrawingArea):
         mode = self.options.mode
         return mode != DrawingMode.SELECT and mode not in self.FREEHAND_MODES
 
+    def _tool_owns(self, action: DrawingAction) -> bool:
+        """Whether the active tool is the one that draws this kind of element."""
+        return action.get_drawing_mode() == self.options.mode
+
     def _existing_action_at(self, x_widget: float, y_widget: float, x_image: int, y_image: int):
-        """What a press here would act on: a resize handle, a move, or a selection."""
-        if self.selected_action and self._can_resize_action(self.selected_action):
-            handle = self._get_handle_at_point(x_widget, y_widget)
-            if handle != ResizeHandle.NONE:
-                return ("handle", handle)
+        """What a press here would act on: a resize handle, a move, or a selection.
 
-        if self.selected_action and self._is_point_in_selection_bounds(x_image, y_image):
-            return ("move", self.selected_action)
+        Each tool sees only its own elements, so the rectangle tool draws straight
+        over an arrow instead of grabbing it. The select tool has no such blinkers.
+        """
+        selected = self.selected_action
+        if selected is not None and self._tool_owns(selected):
+            if self._can_resize_action(selected):
+                handle = self._get_handle_at_point(x_widget, y_widget)
+                if handle != ResizeHandle.NONE:
+                    return ("handle", handle)
 
-        action = self._find_action_at_point(x_image, y_image)
+            if self._is_point_in_selection_bounds(x_image, y_image):
+                return ("move", selected)
+
+        action = self._find_action_at_point(x_image, y_image, own_tool_only=True)
         if action is not None:
             return ("select", action)
 
@@ -402,8 +475,10 @@ class DrawingOverlay(Gtk.DrawingArea):
         self.is_moving_selection = True
         self.move_start_point = (x_image, y_image)
 
-    def _find_action_at_point(self, x_image: int, y_image: int) -> DrawingAction | None:
+    def _find_action_at_point(self, x_image: int, y_image: int, own_tool_only: bool = False) -> DrawingAction | None:
         for action in reversed(self.actions):
+            if own_tool_only and not self._tool_owns(action):
+                continue
             if action.contains_point(x_image, y_image):
                 return action
         return None
@@ -922,6 +997,7 @@ class DrawingOverlay(Gtk.DrawingArea):
         self.actions.clear()
         self.redo_stack.clear()
         self.selected_action = None
+        self.forget_copied_action()
         self._next_number = 1
         self._update_undo_redo_action_states()
         self.queue_draw()
