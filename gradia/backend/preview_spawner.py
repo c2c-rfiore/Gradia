@@ -33,6 +33,10 @@ from gradia.backend.logger import Logger
 
 logging = Logger()
 
+# The flag the two processes speak to each other. The preview side imports it,
+# so the spelling lives in exactly one place.
+PREVIEW_ARG = "--preview-file="
+
 
 def _launcher_path() -> Optional[str]:
     """The gradia launcher, which doubles as the preview entry point."""
@@ -55,7 +59,7 @@ def spawn_preview(file_path: str) -> bool:
 
     try:
         Gio.Subprocess.new(
-            [launcher, f"--preview-file={file_path}"],
+            [launcher, f"{PREVIEW_ARG}{file_path}"],
             Gio.SubprocessFlags.NONE,
         )
         logging.info(f"Screenshot preview requested for {file_path}")

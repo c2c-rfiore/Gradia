@@ -20,48 +20,37 @@
 This runs beside the editor under its own application id so it can use the
 XWayland backend, which is the only way to anchor a window to a screen corner
 and keep it above other windows on GNOME. Being a unique GApplication also means
-later screenshots reach the already-running stack through the ordinary
+later screenshots reach the already-running previews through the ordinary
 command-line hand-off, with no IPC of our own.
+
+The previews are mirrored: every monitor carries an identical copy of the stack,
+so the previews are always on the screen being worked on because they are on all
+of them. Nothing here decides which screen the user is on, because GNOME Wayland
+gives a client no faithful way to know: XQueryPointer only moves over our own
+XWayland surfaces, Shell.Introspect is locked down, and where the compositor
+places new windows trails the user by enough to feel wrong. Being everywhere is
+the one placement that cannot be wrong. Deleting, dismissing or opening a
+screenshot from any copy applies to every copy.
 """
 
 import os
 import sys
+from collections import Counter
 from typing import Optional
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from gradia.backend.logger import Logger
+from gradia.backend.preview_spawner import PREVIEW_ARG
 from gradia.backend.x11_placement import X11Placement
 from gradia.constants import app_id, rootdir  # pyright: ignore
 from gradia.ui.screenshot_preview import ScreenshotPreviewStack
 
 logging = Logger()
 
-PREVIEW_ARG = "--preview-file="
-
-
-def monitor_at(monitors: list, pointer: Optional[tuple[int, int]]):
-    """The monitor holding the pointer, falling back to the first one.
-
-    Kept separate from the display so multi-monitor placement can be tested
-    without a second screen attached.
-    """
-    if not monitors:
-        return None
-
-    if pointer is not None:
-        x, y = pointer
-        for monitor in monitors:
-            geometry = monitor.get_geometry()
-            if (geometry.x <= x < geometry.x + geometry.width
-                    and geometry.y <= y < geometry.y + geometry.height):
-                return monitor
-
-    return monitors[0]
-
 
 class PreviewApplication(Adw.Application):
-    """Holds one preview stack per monitor."""
+    """Keeps one identical preview stack on every monitor."""
 
     def __init__(self, editor_command: Optional[list[str]] = None) -> None:
         super().__init__(
@@ -71,6 +60,8 @@ class PreviewApplication(Adw.Application):
         self.editor_command = editor_command or [sys.argv[0]]
         self.placement = X11Placement()
         self.stacks: dict[str, ScreenshotPreviewStack] = {}
+        self.screenshots: list[str] = []
+        self._monitor_model = None
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -109,42 +100,77 @@ class PreviewApplication(Adw.Application):
             logging.warning(f"Preview requested for a file that is not there: {file_path}")
             return
 
-        monitor = self._monitor_for_pointer()
-        if monitor is None:
-            logging.warning("No monitor available for the screenshot preview.")
-            return
-
-        stack = self._stack_for(monitor)
-        stack.add_screenshot(file_path)
-        stack.present()
+        self.screenshots.append(file_path)
+        self._watch_monitors()
+        self._sync_stacks()
         logging.info(
-            f"Preview shown for {file_path} on {monitor.get_connector()} "
-            f"({len(stack.cards)} in the stack)"
+            f"Preview shown for {file_path} on {len(self.stacks)} screen(s) "
+            f"({len(self.screenshots)} in the stack)"
         )
 
-    def _stack_for(self, monitor: Gdk.Monitor) -> ScreenshotPreviewStack:
-        key = monitor.get_connector() or "default"
-        stack = self.stacks.get(key)
-        if stack is None:
-            stack = ScreenshotPreviewStack(
-                monitor=monitor,
-                placement=self.placement,
-                on_edit=self.open_in_editor,
-                on_empty=lambda s, key=key: self.stacks.pop(key, None),
-            )
-            self.add_window(stack)
-            self.stacks[key] = stack
-        return stack
-
-    def _monitor_for_pointer(self) -> Optional[Gdk.Monitor]:
-        """Stack on the monitor the pointer is on, so previews follow the user."""
+    def _watch_monitors(self) -> None:
+        """Monitors coming and going re-balance the stacks; connected once."""
+        if self._monitor_model is not None:
+            return
         display = Gdk.Display.get_default()
         if display is None:
-            return None
+            return
+        self._monitor_model = display.get_monitors()
+        self._monitor_model.connect("items-changed", lambda *_: self._sync_stacks())
 
-        monitor_list = display.get_monitors()
-        monitors = [monitor_list.get_item(i) for i in range(monitor_list.get_n_items())]
-        return monitor_at(monitors, self.placement.pointer_position())
+    def _sync_stacks(self) -> None:
+        """One stack per attached monitor, each holding every screenshot."""
+        display = Gdk.Display.get_default()
+        if display is None:
+            return
+
+        model = display.get_monitors()
+        by_connector: dict[str, Gdk.Monitor] = {}
+        for index in range(model.get_n_items()):
+            monitor = model.get_item(index)
+            by_connector[monitor.get_connector() or f"monitor-{index}"] = monitor
+
+        # A stack whose screen went away closes. A replug hands out a same-named
+        # but new monitor object, and the stack holds the dead one, so validity
+        # matters as much as the name; the fresh screen gets a new stack below.
+        for key, stack in list(self.stacks.items()):
+            if key not in by_connector or not stack.monitor.is_valid():
+                self.stacks.pop(key, None)
+                stack.close()
+
+        if not self.screenshots:
+            return
+
+        for key, monitor in by_connector.items():
+            stack = self.stacks.get(key)
+            if stack is None:
+                stack = ScreenshotPreviewStack(
+                    monitor=monitor,
+                    placement=self.placement,
+                    on_edit=self.open_in_editor,
+                    on_card_removed=self._remove_everywhere,
+                    on_empty=lambda s, key=key: self.stacks.pop(key, None),
+                )
+                self.add_window(stack)
+                self.stacks[key] = stack
+
+            # Top the copy up to the full screenshot list, duplicates included.
+            have = Counter(card.file_path for card in stack.cards)
+            for path in self.screenshots:
+                if have[path]:
+                    have[path] -= 1
+                else:
+                    stack.add_screenshot(path)
+            stack.present()
+
+    def _remove_everywhere(self, file_path: str) -> None:
+        """A card acted on in one copy acts on all of them."""
+        try:
+            self.screenshots.remove(file_path)
+        except ValueError:
+            pass
+        for stack in list(self.stacks.values()):
+            stack.remove_path(file_path)
 
     def open_in_editor(self, file_path: str) -> None:
         """Hand the file to the editor, reusing a running one where possible.

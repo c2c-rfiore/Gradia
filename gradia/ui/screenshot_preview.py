@@ -17,9 +17,11 @@
 
 """Floating screenshot previews, stacked in a corner of the screen.
 
-One window per monitor holds a vertical stack of cards. Cards never expire on
-their own: each one stays until it is deleted or dismissed, and opening it in
-the editor leaves it in place.
+Each monitor carries one of these windows, and they all show the same cards: the
+application mirrors every add and remove across the set, so acting on a card on
+any screen acts on all of them. Cards never expire on their own: each one stays
+until it is deleted or dismissed, and opening it in the editor leaves it in
+place.
 """
 
 import os
@@ -193,7 +195,12 @@ class ScreenshotPreviewCard(Gtk.Box):
 
 
 class ScreenshotPreviewStack(Gtk.Window):
-    """The floating stack of previews anchored to one monitor's bottom-left corner."""
+    """One monitor's copy of the previews, pinned to its bottom-left corner.
+
+    The stack never decides anything for its siblings: a card's buttons report
+    to the application through ``on_card_removed``, and the application tells
+    every stack — this one included — what to remove.
+    """
 
     __gtype_name__ = "GradiaScreenshotPreviewStack"
 
@@ -202,6 +209,7 @@ class ScreenshotPreviewStack(Gtk.Window):
         monitor: Gdk.Monitor,
         placement: X11Placement,
         on_edit: Callable[[str], None],
+        on_card_removed: Callable[[str], None],
         on_empty: Callable[["ScreenshotPreviewStack"], None],
     ) -> None:
         super().__init__()
@@ -209,12 +217,13 @@ class ScreenshotPreviewStack(Gtk.Window):
         self.monitor = monitor
         self.placement = placement
         self._on_edit = on_edit
+        self._on_card_removed = on_card_removed
         self._on_empty = on_empty
         self.cards: list[ScreenshotPreviewCard] = []
         self._revealers: dict[ScreenshotPreviewCard, Gtk.Revealer] = {}
         self._settling = 0
         self._tick_id: Optional[int] = None
-        self._last_y: Optional[int] = None
+        self._last_position: Optional[tuple[int, int]] = None
         self._kept_above = False
         self._reported_empty = False
 
@@ -232,7 +241,12 @@ class ScreenshotPreviewStack(Gtk.Window):
     """
 
     def add_screenshot(self, file_path: str) -> ScreenshotPreviewCard:
-        card = ScreenshotPreviewCard(file_path, self._on_edit, self.remove_card)
+        card = ScreenshotPreviewCard(
+            file_path, self._on_edit,
+            # Route through the application, which mirrors the removal onto
+            # every stack, this one included (via remove_path).
+            lambda card: self._on_card_removed(card.file_path),
+        )
         revealer = Gtk.Revealer(
             transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
             transition_duration=TRANSITION_MS,
@@ -252,6 +266,13 @@ class ScreenshotPreviewStack(Gtk.Window):
     def _reveal(revealer: Gtk.Revealer) -> bool:
         revealer.set_reveal_child(True)
         return False
+
+    def remove_path(self, file_path: str) -> None:
+        """Collapse this stack's card for the given screenshot, if it has one."""
+        for card in self.cards:
+            if card.file_path == file_path:
+                self.remove_card(card)
+                return
 
     def remove_card(self, card: ScreenshotPreviewCard) -> None:
         """Collapse the card away; the ones above it settle down into the gap."""
@@ -347,9 +368,11 @@ class ScreenshotPreviewStack(Gtk.Window):
         x = geometry.x + SCREEN_MARGIN
         y = geometry.y + geometry.height - height - SCREEN_MARGIN
 
-        if y != self._last_y:
+        # Compared on both axes: monitors side by side share a bottom edge, so
+        # moving between them changes x alone.
+        if (x, y) != self._last_position:
             self.placement.move(xid, x, y)
-            self._last_y = y
+            self._last_position = (x, y)
 
         # Once is enough; this runs on every frame while the stack settles.
         if not self._kept_above:

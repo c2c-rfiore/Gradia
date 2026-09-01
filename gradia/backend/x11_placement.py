@@ -183,23 +183,3 @@ class X11Placement:
             0, 0, ctypes.byref(x), ctypes.byref(y), ctypes.byref(child),
         )
         return x.value, y.value
-
-    def pointer_position(self) -> Optional[tuple[int, int]]:
-        """Root-relative pointer position, used to pick the monitor to stack on."""
-        if not self.available:
-            return None
-
-        root_return, child_return = ctypes.c_ulong(), ctypes.c_ulong()
-        root_x, root_y = ctypes.c_int(), ctypes.c_int()
-        win_x, win_y = ctypes.c_int(), ctypes.c_int()
-        mask = ctypes.c_uint()
-
-        found = self._x11.XQueryPointer(
-            self._display, ctypes.c_ulong(self._root),
-            ctypes.byref(root_return), ctypes.byref(child_return),
-            ctypes.byref(root_x), ctypes.byref(root_y),
-            ctypes.byref(win_x), ctypes.byref(win_y), ctypes.byref(mask),
-        )
-        if not found:
-            return None
-        return root_x.value, root_y.value
