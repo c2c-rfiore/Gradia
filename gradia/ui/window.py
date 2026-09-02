@@ -16,11 +16,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from collections.abc import Callable
+import copy
 import os
 import threading
 from typing import Any, Optional
 
-from gi.repository import Adw, GLib, GObject, Gdk, Gio, Gtk, Xdp
+from gi.repository import Adw, GLib, GObject, Gdk, GdkPixbuf, Gio, Gtk, Xdp
 
 from gradia.clipboard import *
 from gradia.graphics.background import Background
@@ -97,6 +98,13 @@ class GradiaMainWindow(Adw.ApplicationWindow):
             self.add_css_class("devel")
 
         self.processor: ImageProcessor = ImageProcessor()
+
+        # Preview pipeline state. See process_image() for why requests are
+        # coalesced instead of queued.
+        self._preview_generation: int = 0
+        self._preview_running: bool = False
+        self._preview_pending: bool = False
+        self._preview_callbacks: list[Callable[[], None]] = []
         self._setup_actions()
         self._setup_image_stack()
         self._setup_clipboard_handoff()
@@ -355,12 +363,31 @@ class GradiaMainWindow(Adw.ApplicationWindow):
     def show(self) -> None:
         self.present()
 
-    def process_image(self, callback=None) -> None:
+    def process_image(self, callback: Optional[Callable[[], None]] = None) -> None:
+        """
+        Request a preview composite using the processor's current settings.
+
+        Requests are coalesced, not queued. A full composite costs tens of
+        milliseconds while a slider emits value-changed at input rate, so
+        spawning a thread per event left dozens of redundant composites
+        competing for cores with the preview trailing the pointer. At most one
+        pass runs at a time; everything requested while it is in flight
+        collapses into a single follow-up pass that picks up the newest
+        settings.
+        """
         if not self.image:
             return
-        def worker():
-            self._process_in_background(callback)
-        threading.Thread(target=worker, daemon=True).start()
+
+        if callback:
+            self._preview_callbacks.append(callback)
+
+        self._preview_generation += 1
+
+        if self._preview_running:
+            self._preview_pending = True
+            return
+
+        self._start_preview_pass()
 
     """
     Private Methods
@@ -404,26 +431,84 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         if self.image:
             self.process_image()
 
-    def _process_in_background(self, callback=None) -> None:
+    def _start_preview_pass(self) -> None:
+        image = self.image
+        if image is None:
+            self._preview_running = False
+            self._preview_pending = False
+            return
+
+        self._preview_running = True
+        self._preview_pending = False
+        generation = self._preview_generation
+
+        # The worker gets its own processor, and its own copy of the background,
+        # so that a slider moved mid-composite cannot change the settings out
+        # from under a pass already running. self.processor stays the
+        # authoritative current-settings object that the export paths read.
+        worker_processor = ImageProcessor(
+            background=copy.copy(self.processor.background),
+            padding=self.processor.padding,
+            aspect_ratio=self.processor.aspect_ratio,
+            corner_radius=self.processor.corner_radius,
+            shadow_strength=self.processor.shadow_strength,
+            auto_balance=self.processor.auto_balance,
+            rotation=self.processor.rotation,
+        )
+
+        threading.Thread(
+            target=self._process_in_background,
+            args=(worker_processor, image, generation),
+            daemon=True,
+        ).start()
+
+    def _process_in_background(
+        self,
+        processor: ImageProcessor,
+        image: LoadedImage,
+        generation: int
+    ) -> None:
+        result: Optional[tuple[GdkPixbuf.Pixbuf, int, int]] = None
         try:
-            if self.image is not None:
-                self.processor.set_image(self.image)
-                pixbuf, true_width, true_height = self.processor.process()
-                self._update_processed_image_size(true_width, true_height)
-                self.processed_pixbuf = pixbuf
-            else:
-                print("No image path set for processing.")
-
-            def finish():
-                self._update_image_preview()
-                if callback:
-                    callback()
-                return False
-
-            GLib.idle_add(finish, priority=GLib.PRIORITY_DEFAULT)
-
+            processor.set_image(image)
+            result = processor.process()
         except Exception as e:
             print(f"Error processing image: {e}")
+
+        # Every widget touch happens back on the main thread: GTK is not
+        # thread-safe, and the sidebar size label used to be written from here.
+        GLib.idle_add(
+            self._finish_preview_pass, result, generation,
+            priority=GLib.PRIORITY_DEFAULT
+        )
+
+    def _finish_preview_pass(
+        self,
+        result: Optional[tuple[GdkPixbuf.Pixbuf, int, int]],
+        generation: int
+    ) -> bool:
+        self._preview_running = False
+
+        # A pass whose settings were superseded while it ran must not publish:
+        # threads finish out of order, so a stale frame would leave the image
+        # showing one slider position while the sidebar shows another.
+        superseded = generation != self._preview_generation
+
+        if result is not None and not superseded:
+            pixbuf, true_width, true_height = result
+            self.processed_pixbuf = pixbuf
+            self._update_processed_image_size(true_width, true_height)
+            self._update_image_preview()
+
+            callbacks = self._preview_callbacks
+            self._preview_callbacks = []
+            for preview_callback in callbacks:
+                preview_callback()
+
+        if superseded or self._preview_pending:
+            self._start_preview_pass()
+
+        return False
 
     def _update_image_preview(self) -> bool:
         if self.processed_pixbuf:

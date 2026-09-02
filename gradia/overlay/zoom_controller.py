@@ -414,18 +414,31 @@ class ZoomController(Gtk.Widget):
 
         self._animate_pan(target_pan_x, target_pan_y)
 
-    def _animate_pan(self, target_pan_x, target_pan_y, duration=150):
-        if self._animation_tick_id and self._animation_tick_id > 0:
-            GLib.source_remove(self._animation_tick_id)
+    def _stop_animation(self) -> None:
+        """
+        Cancel any running animation.
+
+        Tick callbacks belong to the widget, not to the main loop, so they are
+        removed with remove_tick_callback rather than GLib.source_remove; a tick
+        that has already finished zeroes the id itself.
+        """
+        if self._animation_tick_id:
+            self.remove_tick_callback(self._animation_tick_id)
             self._animation_tick_id = 0
+
+    def _animate_pan(self, target_pan_x, target_pan_y, duration=150):
+        self._stop_animation()
 
         start_pan_x = self._pan_x
         start_pan_y = self._pan_y
-        start_time = GLib.get_monotonic_time()
+        start_time = 0
 
-        def tick():
-            elapsed = (GLib.get_monotonic_time() - start_time) / 1000.0
-            t = min(1.0, elapsed / duration)
+        def tick(widget, frame_clock):
+            nonlocal start_time
+            now = frame_clock.get_frame_time()
+            if not start_time:
+                start_time = now
+            t = min(1.0, (now - start_time) / 1000.0 / duration)
             ease = 1 - (1 - t) ** 3
 
             self._pan_x = start_pan_x + (target_pan_x - start_pan_x) * ease
@@ -435,12 +448,12 @@ class ZoomController(Gtk.Widget):
             self._update_drawing_overlay_transform()
 
             if t < 1.0:
-                return True
-            else:
-                self._animation_tick_id = 0
-                return False
+                return GLib.SOURCE_CONTINUE
 
-        self._animation_tick_id = GLib.timeout_add(16, tick)
+            self._animation_tick_id = 0
+            return GLib.SOURCE_REMOVE
+
+        self._animation_tick_id = self.add_tick_callback(tick)
 
     def fit_to_window(self):
         if not self._picture:
@@ -526,14 +539,16 @@ class ZoomController(Gtk.Widget):
             self._animate_zoom_toggle(1.0, self._previous_zoom_level, 0.0, self._previous_pan_x, 0.0, self._previous_pan_y)
 
     def _animate_zoom_toggle(self, from_zoom, to_zoom, from_pan_x, to_pan_x, from_pan_y, to_pan_y, duration=150):
-        if self._animation_tick_id:
-            GLib.source_remove(self._animation_tick_id)
+        self._stop_animation()
 
-        start_time = GLib.get_monotonic_time()
+        start_time = 0
 
-        def tick():
-            elapsed = (GLib.get_monotonic_time() - start_time) / 1000.0
-            t = min(1.0, elapsed / duration)
+        def tick(widget, frame_clock):
+            nonlocal start_time
+            now = frame_clock.get_frame_time()
+            if not start_time:
+                start_time = now
+            t = min(1.0, (now - start_time) / 1000.0 / duration)
             ease = -0.5 * (math.cos(math.pi * t) - 1)
 
             self._zoom_level = from_zoom + (to_zoom - from_zoom) * ease
@@ -545,12 +560,12 @@ class ZoomController(Gtk.Widget):
             self._update_drawing_overlay_transform()
 
             if t < 1.0:
-                return True
-            else:
-                self._animation_tick_id = 0
-                return False
+                return GLib.SOURCE_CONTINUE
 
-        self._animation_tick_id = GLib.timeout_add(16, tick)
+            self._animation_tick_id = 0
+            return GLib.SOURCE_REMOVE
+
+        self._animation_tick_id = self.add_tick_callback(tick)
 
     def _animate_zoom_at_center(self, factor=None, target_zoom=None, target_pan_x=None, target_pan_y=None, duration=150):
         if self._disable_zoom:
@@ -583,18 +598,19 @@ class ZoomController(Gtk.Widget):
             if target_pan_y is None:
                 target_pan_y = 0.0
 
-        if self._animation_tick_id and self._animation_tick_id > 0:
-            GLib.source_remove(self._animation_tick_id)
-            self._animation_tick_id = 0
+        self._stop_animation()
 
         start_zoom = self._zoom_level
         start_pan_x = self._pan_x
         start_pan_y = self._pan_y
-        start_time = GLib.get_monotonic_time()
+        start_time = 0
 
-        def tick():
-            elapsed = (GLib.get_monotonic_time() - start_time) / 1000.0
-            t = min(1.0, elapsed / duration)
+        def tick(widget, frame_clock):
+            nonlocal start_time
+            now = frame_clock.get_frame_time()
+            if not start_time:
+                start_time = now
+            t = min(1.0, (now - start_time) / 1000.0 / duration)
             ease = 1 - (1 - t) ** 3
             self._zoom_level = start_zoom + (target_zoom - start_zoom) * ease
             self._pan_x = start_pan_x + (target_pan_x - start_pan_x) * ease
@@ -605,9 +621,9 @@ class ZoomController(Gtk.Widget):
             self._update_drawing_overlay_transform()
 
             if t < 1.0:
-                return True
-            else:
-                self._animation_tick_id = 0
-                return False
+                return GLib.SOURCE_CONTINUE
 
-        self._animation_tick_id = GLib.timeout_add(16, tick)
+            self._animation_tick_id = 0
+            return GLib.SOURCE_REMOVE
+
+        self._animation_tick_id = self.add_tick_callback(tick)
