@@ -80,10 +80,34 @@ def is_light_color_hex(hex_color: str) -> bool:
 def is_light_color_rgba(rgba: Gdk.RGBA) -> bool:
     return _calculate_luminance(rgba.red, rgba.green, rgba.blue, rgba.alpha) > 130
 
-def parse_rgb_string(s: str) -> tuple[int, int, int]:
+def parse_rgb_string(s: str) -> RGBTuple:
+    """
+    Parses a colour into its red, green and blue channels.
+
+    Gradient steps reach here from three places that do not agree on a format:
+    the editor emits `Gdk.RGBA.to_string()`, which is `rgb(...)` when opaque and
+    `rgba(...)` when not, while the gradients defined in code are hex. All three
+    are accepted; any alpha channel is dropped, since gradients render opaque.
+    """
+
     s = s.strip().lower()
-    if s.startswith("rgb(") and s.endswith(")"):
-        parts = s[4:-1].split(",")
-        return tuple(int(p.strip()) for p in parts)
+
+    for prefix in ("rgba(", "rgb("):
+        if s.startswith(prefix) and s.endswith(")"):
+            parts = s[len(prefix):-1].replace("/", ",").split(",")
+            if len(parts) < 3:
+                break
+            return tuple(int(round(float(p.strip()))) for p in parts[:3])
+
+    if s.startswith("#"):
+        digits = s[1:]
+        if len(digits) in (3, 4):
+            digits = "".join(d * 2 for d in digits)
+        if len(digits) in (6, 8):
+            try:
+                return tuple(int(digits[i:i + 2], 16) for i in (0, 2, 4))
+            except ValueError:
+                pass
+
     raise ValueError(f"Invalid rgb string: {s}")
 

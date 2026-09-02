@@ -19,7 +19,7 @@ import json
 from collections.abc import Callable
 from typing import Any, Optional
 
-from gi.repository import GObject, Gtk, Adw, GLib, Pango
+from gi.repository import GObject, Gdk, Gtk, Adw, GLib, Pango
 
 from gradia.graphics.gradient import Gradient, GradientBackground
 from gradia.graphics.gradient_selector import GradientSelector
@@ -29,6 +29,7 @@ from gradia.graphics.background import Background
 from gradia.ui.widget.toggle_group import ToggleGroup
 from gradia.constants import rootdir  # pyright: ignore
 from gradia.backend.settings import Settings
+from gradia.utils.colors import hex_to_rgba
 from gradia.backend.background_preset import (
     MODES,
     BackgroundPreset,
@@ -69,8 +70,10 @@ class BackgroundSelector(Adw.Bin):
         self._applying_preset = False
         self._preset_rows: list[Gtk.ListBoxRow] = []
         self._preset_list_busy = False
-        # Owned by the sidebar, which shows it above the sections.
+        # Owned by the sidebar, which shows them above the sections.
         self.preset_button: Optional[Gtk.MenuButton] = None
+        self._save_revealer: Optional[Gtk.Revealer] = None
+        self._preset_dirty = False
         self._image_options_getter: Optional[ImageOptionsGetter] = None
         self._image_options_applier: Optional[ImageOptionsApplier] = None
 
@@ -165,7 +168,7 @@ class BackgroundSelector(Adw.Bin):
             if self.current_mode != "none":
                 self.stack.set_visible_child_name(active_name)
             self._update_revealer_visibility()
-            self.save_active_preset()
+            self.refresh_preset_dirty_state()
             self._notify_current()
 
     def attach_preset_button(self, button: Gtk.MenuButton) -> None:
@@ -173,6 +176,12 @@ class BackgroundSelector(Adw.Bin):
         self.preset_button = button
         button.set_popover(self.preset_popover)
         self._refresh_presets()
+
+    def attach_preset_save_button(self, button: Gtk.Button, revealer: Gtk.Revealer) -> None:
+        """Adopt the save control the sidebar shows beside the preset button."""
+        self._save_revealer = revealer
+        button.connect("clicked", lambda _button: self.commit_active_preset())
+        revealer.set_reveal_child(self._preset_dirty)
 
     def _on_preset_row_activated(self, _list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         if self._preset_list_busy:
@@ -187,7 +196,7 @@ class BackgroundSelector(Adw.Bin):
         if self._applying_preset:
             return
         self.settings.gradient_state = gradient.to_json()
-        self.save_active_preset()
+        self.refresh_preset_dirty_state()
         if self.current_mode == "gradient":
             self._notify_current()
 
@@ -195,13 +204,13 @@ class BackgroundSelector(Adw.Bin):
         if self._applying_preset:
             return
         self.settings.solid_state = solid.to_json()
-        self.save_active_preset()
+        self.refresh_preset_dirty_state()
         if self.current_mode == "solid":
             self._notify_current()
 
     def _on_image_changed(self, image: ImageBackground) -> None:
         self.settings.image_state = image.to_json()
-        self.save_active_preset()
+        self.refresh_preset_dirty_state()
         if self.current_mode == "image":
             self._notify_current()
 
@@ -221,21 +230,59 @@ class BackgroundSelector(Adw.Bin):
         """Let the sidebar contribute its image options to presets, and receive them back."""
         self._image_options_getter = getter
         self._image_options_applier = applier
-        self.save_active_preset()
+        self.refresh_preset_dirty_state()
 
-    def save_active_preset(self) -> None:
-        """Write the live background and image options into the selected preset."""
+    def _live_preset(self) -> BackgroundPreset:
+        """The settings as they stand right now, in the shape of a preset."""
+        image_options = self._image_options_getter() if self._image_options_getter else None
+        return BackgroundPreset.from_dict({
+            "name": self.preset_store.active.name,
+            "mode": self.current_mode,
+            "solid": json.loads(self.solid.to_json()),
+            "gradient": json.loads(self.gradient.to_json()),
+            "image": json.loads(self.image.to_json()),
+            "image_options": image_options,
+        })
+
+    def refresh_preset_dirty_state(self) -> None:
+        """
+        Re-check whether the live settings still match the selected preset.
+
+        Editing no longer writes back into the preset. Instead every control
+        that changes the background calls this, and the save button beside the
+        preset appears for as long as the two differ.
+        """
         if self._applying_preset:
             return
 
-        image_options = self._image_options_getter() if self._image_options_getter else None
+        if self._image_options_getter is None:
+            # The sidebar has not handed its image options over yet; comparing
+            # now would read the defaults and report a difference that is not
+            # really there.
+            return
+
+        dirty = self._live_preset().fingerprint() != self.preset_store.active.fingerprint()
+        if dirty == self._preset_dirty:
+            return
+
+        self._preset_dirty = dirty
+        if self._save_revealer is not None:
+            self._save_revealer.set_reveal_child(dirty)
+
+    def commit_active_preset(self) -> None:
+        """Overwrite the selected preset with the settings currently on screen."""
+        live = self._live_preset()
         self.preset_store.update_active(
-            mode=self.current_mode,
-            solid=json.loads(self.solid.to_json()),
-            gradient=json.loads(self.gradient.to_json()),
-            image=json.loads(self.image.to_json()),
-            image_options=image_options,
+            mode=live.mode,
+            solid=live.solid,
+            gradient=live.gradient,
+            image=live.image,
+            image_options=live.image_options,
         )
+        # The swatch in the popover is drawn from the stored preset, so it has
+        # to be redrawn now that the stored preset has moved.
+        self._refresh_presets()
+        self.refresh_preset_dirty_state()
 
     def _apply_preset(self, preset: BackgroundPreset) -> None:
         self._applying_preset = True
@@ -256,8 +303,15 @@ class BackgroundSelector(Adw.Bin):
             self._applying_preset = False
 
         # Loading an image is asynchronous, so it runs outside of the guard and
-        # reports back through _on_image_changed once the file is decoded.
-        self.image_selector.set_image_path(preset.image.get("file_path", ""))
+        # reports back through _on_image_changed once the file is decoded. Until
+        # it does, the live image background still points at the old file, so
+        # leave the comparison to that callback rather than flashing the save
+        # button on and straight back off again.
+        target_path = preset.image.get("file_path", "")
+        awaiting_image = bool(target_path) and target_path != self.image.file_path
+        self.image_selector.set_image_path(target_path)
+        if not awaiting_image:
+            self.refresh_preset_dirty_state()
 
         self._notify_current()
 
@@ -284,6 +338,7 @@ class BackgroundSelector(Adw.Bin):
                 row = Gtk.ListBoxRow(activatable=True)
                 content = Gtk.Box(spacing=12, margin_top=6, margin_bottom=6,
                                   margin_start=6, margin_end=6)
+                content.append(self._preset_swatch(preset))
                 content.append(Gtk.Label(label=preset.name, xalign=0, hexpand=True,
                                          ellipsize=Pango.EllipsizeMode.END))
 
@@ -302,6 +357,97 @@ class BackgroundSelector(Adw.Bin):
         self.delete_preset_button.set_sensitive(len(self.preset_store.presets) > 1)
 
     """
+    Preset Swatches
+    """
+
+    SWATCH_SIZE = 34
+
+    def _preset_swatch(self, preset: BackgroundPreset) -> Gtk.Widget:
+        """
+        A thumbnail of what the preset paints, for its row in the popover.
+
+        The tile itself is a checkerboard and every mode covers it with a child
+        widget. That is what makes transparency read correctly without a case
+        for it: a solid at less than full alpha lets the checks through, and a
+        preset with no background -- or one whose image file has since gone --
+        simply has no child, so the checkerboard is what you see.
+        """
+        swatch = Adw.Bin(
+            width_request=self.SWATCH_SIZE,
+            height_request=self.SWATCH_SIZE,
+            valign=Gtk.Align.CENTER,
+            overflow=Gtk.Overflow.HIDDEN,
+        )
+        swatch.add_css_class("preset-swatch")
+
+        if preset.mode == "solid":
+            self._fill_solid_swatch(swatch, preset)
+        elif preset.mode == "gradient":
+            self._fill_gradient_swatch(swatch, preset)
+        elif preset.mode == "image":
+            self._fill_image_swatch(swatch, preset.image.get("file_path", ""))
+
+        return swatch
+
+    def _fill_solid_swatch(self, swatch: Adw.Bin, preset: BackgroundPreset) -> None:
+        rgba = hex_to_rgba(
+            preset.solid.get("color", "#000000"),
+            float(preset.solid.get("alpha", 1.0)),
+        )
+        fill = Adw.Bin(hexpand=True, vexpand=True)
+        fill.add_css_class("preset-swatch-fill")
+
+        provider = Gtk.CssProvider()
+        provider.load_from_string(
+            f".preset-swatch-fill {{ background-color: {rgba.to_string()}; }}"
+        )
+        fill.get_style_context().add_provider(
+            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3
+        )
+        swatch.set_child(fill)
+
+    def _fill_gradient_swatch(self, swatch: Adw.Bin, preset: BackgroundPreset) -> None:
+        """
+        Draw the gradient with the same generator the canvas uses.
+
+        CSS could express a linear gradient, but not every mode survives the
+        round trip -- and a swatch that renders through a second, similar-but-
+        different path is exactly the kind that quietly stops matching the
+        canvas. This one cannot: it is the canvas code, at 34 pixels.
+        """
+        try:
+            background = GradientBackground.from_json(json.dumps(preset.gradient))
+            image = background.prepare_image(self.SWATCH_SIZE, self.SWATCH_SIZE)
+            texture = Gdk.MemoryTexture.new(
+                image.width, image.height,
+                Gdk.MemoryFormat.R8G8B8A8,
+                GLib.Bytes.new(image.tobytes()),
+                image.width * 4,
+            )
+        except Exception as error:
+            print(f"Could not draw a swatch for preset “{preset.name}”: {error}")
+            return
+
+        swatch.set_child(Gtk.Picture(paintable=texture, content_fit=Gtk.ContentFit.FILL))
+
+    def _fill_image_swatch(self, swatch: Adw.Bin, file_path: str) -> None:
+        picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER)
+        try:
+            if not file_path:
+                raise ValueError("the preset has no background image")
+            if file_path.startswith(rootdir):
+                picture.set_resource(file_path)
+            else:
+                picture.set_filename(file_path)
+            if picture.get_paintable() is None:
+                raise ValueError(f"nothing decoded from {file_path}")
+        except Exception as error:
+            print(f"Could not draw an image swatch: {error}")
+            return
+
+        swatch.set_child(picture)
+
+    """
     Preset Actions
     """
 
@@ -313,10 +459,13 @@ class BackgroundSelector(Adw.Bin):
         )
 
     def _create_preset(self, name: str) -> None:
-        # A new preset starts from the defaults rather than copying the current one.
-        self.preset_store.add(BackgroundPreset(name=name))
+        # A new preset captures what is on screen, which is what makes diverging
+        # from a preset safe: the save button overwrites the one you are on,
+        # this keeps both. Nothing needs applying afterwards -- these settings
+        # are already the live ones -- so the canvas does not flicker either.
+        self.preset_store.add(self._live_preset().copy_as(name))
         self._refresh_presets()
-        self._apply_preset(self.preset_store.active)
+        self.refresh_preset_dirty_state()
 
     def _on_preset_rename(self) -> None:
         self._prompt_for_name(

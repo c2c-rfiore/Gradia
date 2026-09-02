@@ -263,6 +263,14 @@ class Settings:
         self._settings.set_int("background-preset-index", value)
 
     @property
+    def builtin_presets_seeded(self) -> bool:
+        return self._settings.get_boolean("builtin-presets-seeded")
+
+    @builtin_presets_seeded.setter
+    def builtin_presets_seeded(self, value: bool) -> None:
+        self._settings.set_boolean("builtin-presets-seeded", value)
+
+    @property
     def solid_state(self) -> str:
         return self._settings.get_string("solid-state")
 

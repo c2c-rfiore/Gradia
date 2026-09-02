@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from gradia.backend.settings import Settings
+from gradia.utils.colors import parse_rgb_string
 
 MODES = ("none", "solid", "gradient", "image")
 
@@ -37,6 +38,25 @@ DEFAULT_IMAGE_OPTIONS: dict[str, Any] = {
     "shadow_strength": 5,
     "auto_balance": False,
 }
+
+
+def _color_key(value: Any) -> Any:
+    """A colour reduced to its channels, so hex and rgb() spellings compare equal."""
+    try:
+        return parse_rgb_string(str(value))
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def _steps_key(steps: Any) -> tuple:
+    """Gradient stops as (position, channels), rounded past the editor's float noise."""
+    try:
+        return tuple(
+            (round(float(position), 4), _color_key(color))
+            for position, color in steps
+        )
+    except (TypeError, ValueError):
+        return (repr(steps),)
 
 
 @dataclass
@@ -75,6 +95,135 @@ class BackgroundPreset:
     def copy_as(self, name: str) -> "BackgroundPreset":
         return BackgroundPreset.from_dict({**self.to_dict(), "name": name})
 
+    def fingerprint(self) -> tuple:
+        """
+        Everything this preset actually renders, in a comparable form.
+
+        The sidebar compares the stored preset against the live settings with
+        this to decide whether they have diverged. Two things matter:
+
+        Only the selected mode's own settings count. Applying a preset writes
+        all four modes, but the inactive three are off screen and change
+        nothing on the canvas, so counting them would light up the save button
+        for a difference nobody can see -- and would do so immediately, since a
+        preset with no background image still leaves the live image background
+        pointing at whatever it last loaded.
+
+        Values are normalised, because the two sides are spelled differently: a
+        stored preset can carry hex colours and integer angles, while the live
+        state comes back from the editors as rgb() strings and floats.
+        """
+        return (self.mode,) + self._mode_fingerprint() + (
+            int(self.image_options.get("padding", 0)),
+            int(self.image_options.get("corner_radius", 0)),
+            str(self.image_options.get("aspect_ratio") or ""),
+            int(self.image_options.get("shadow_strength", 0)),
+            bool(self.image_options.get("auto_balance", False)),
+        )
+
+    def _mode_fingerprint(self) -> tuple:
+        if self.mode == "solid":
+            return (
+                _color_key(self.solid.get("color")),
+                round(float(self.solid.get("alpha", 1.0)), 4),
+            )
+
+        if self.mode == "gradient":
+            gradient_mode = self.gradient.get("mode")
+            # A radial gradient draws from the centre out, so its angle is inert
+            # -- the selector greys it out, and it must not count as a change.
+            angle = (
+                None if gradient_mode == "radial"
+                else round(float(self.gradient.get("angle", 0.0)), 3)
+            )
+            return (gradient_mode, angle, _steps_key(self.gradient.get("steps") or ()))
+
+        if self.mode == "image":
+            return (str(self.image.get("file_path") or ""),)
+
+        return ()
+
+
+def builtin_presets() -> list["BackgroundPreset"]:
+    """
+    The presets Gradia ships with: five backgrounds covering the situations a
+    screenshot usually ends up in.
+
+    Built here rather than at module scope so the names go through gettext at
+    call time, once the translations are installed.
+    """
+    return [BackgroundPreset.from_dict(entry) for entry in (
+        {
+            # A dark neutral makes a light interface read as the subject. Wide
+            # padding and a deep shadow lift it off the page.
+            "name": _("Studio Slate"),
+            "mode": "solid",
+            "solid": {"color": "#1D2126", "alpha": 1.0},
+            "image_options": {
+                "padding": 8, "corner_radius": 2, "aspect_ratio": "",
+                "shadow_strength": 6, "auto_balance": False,
+            },
+        },
+        {
+            # Warm off-white rather than pure white, so the screenshot's own
+            # white surfaces still have an edge against it. Tight and quiet,
+            # for documentation and anything headed for print.
+            "name": _("Paper White"),
+            "mode": "solid",
+            "solid": {"color": "#F4F2EE", "alpha": 1.0},
+            "image_options": {
+                "padding": 6, "corner_radius": 1, "aspect_ratio": "",
+                "shadow_strength": 3, "auto_balance": False,
+            },
+        },
+        {
+            # Indigo through violet into cyan: the hero-image gradient. Locked
+            # to 16:9 because this is the one headed for a slide or a banner.
+            "name": _("Aurora"),
+            "mode": "gradient",
+            "gradient": {
+                "mode": "linear",
+                "steps": [[0.0, "#312E81"], [0.55, "#6D28D9"], [1.0, "#22D3EE"]],
+                "angle": 135.0,
+            },
+            "image_options": {
+                "padding": 10, "corner_radius": 2, "aspect_ratio": "16:9",
+                "shadow_strength": 7, "auto_balance": False,
+            },
+        },
+        {
+            # Amber to crimson, on the diagonal. Warm enough for a blog header
+            # or a release note without tipping into neon.
+            "name": _("Ember"),
+            "mode": "gradient",
+            "gradient": {
+                "mode": "linear",
+                "steps": [[0.0, "#FBB040"], [0.5, "#EF6C4D"], [1.0, "#C9184A"]],
+                "angle": 45.0,
+            },
+            "image_options": {
+                "padding": 9, "corner_radius": 2, "aspect_ratio": "",
+                "shadow_strength": 6, "auto_balance": False,
+            },
+        },
+        {
+            # A radial falloff to near-black is a vignette: the eye goes to the
+            # middle and stays there. The most padding of the five, so the
+            # darkness has room to close in.
+            "name": _("Spotlight"),
+            "mode": "gradient",
+            "gradient": {
+                "mode": "radial",
+                "steps": [[0.0, "#3A3F4B"], [1.0, "#0B0D10"]],
+                "angle": 0.0,
+            },
+            "image_options": {
+                "padding": 12, "corner_radius": 2, "aspect_ratio": "",
+                "shadow_strength": 8, "auto_balance": False,
+            },
+        },
+    )]
+
 
 class BackgroundPresetStore:
     """Persists the preset list and the selected index in GSettings."""
@@ -102,11 +251,35 @@ class BackgroundPresetStore:
                 presets = []
 
         if not presets:
+            # A first run keeps whatever the app is already rendering as preset
+            # zero, so nothing about the user's background changes underneath
+            # them just because presets now exist.
             presets = [self._preset_from_live_settings(_("Default"))]
+
+        presets = self._seed_builtins(presets)
 
         self._presets = presets
         self._active_index = max(0, min(self.settings.background_preset_index, len(presets) - 1))
         self.save()
+
+    def _seed_builtins(self, presets: list[BackgroundPreset]) -> list[BackgroundPreset]:
+        """
+        Append the shipped presets, once ever.
+
+        Guarded by its own setting rather than by "is the list empty", so that
+        installs which already had presets before this existed still receive
+        them -- appended after what is already there, leaving the selected
+        index pointing at the same preset it did before.
+        """
+        if self.settings.builtin_presets_seeded:
+            return presets
+
+        existing = {preset.name for preset in presets}
+        presets = presets + [
+            preset for preset in builtin_presets() if preset.name not in existing
+        ]
+        self.settings.builtin_presets_seeded = True
+        return presets
 
     def save(self) -> None:
         self.settings.background_presets = json.dumps([preset.to_dict() for preset in self._presets])
