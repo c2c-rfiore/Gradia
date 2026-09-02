@@ -392,6 +392,11 @@ class GradiaMainWindow(Adw.ApplicationWindow):
 
     def set_image(self, image: LoadedImage, copy_after_processing=False):
         self.image = image
+        # The preview is composited on the GPU from its own uploaded texture, but
+        # export still renders through Pillow and reads the source from here. It
+        # is the only thing that hands the processor an image, so without it
+        # every save and copy fails on "No full resolution image loaded".
+        self.processor.set_image(image)
         self.drawing_overlay.clear_drawing()
         self.image_bin.reset_crop_selection(silent=True)
         self.sidebar.reset_rotation()
