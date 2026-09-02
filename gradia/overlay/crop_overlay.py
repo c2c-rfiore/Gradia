@@ -20,6 +20,8 @@ from gi.repository import Gtk, Gdk, Graphene, Gsk, GObject
 import math
 import cairo
 
+from gradia.overlay.picture_geometry import follow_picture_size
+
 class CropOverlay(Gtk.Widget):
     __gtype_name__ = "GradiaCropOverlay"
 
@@ -489,7 +491,9 @@ class CropOverlay(Gtk.Widget):
     def set_picture_reference(self, picture: Gtk.Picture) -> None:
         self.picture_widget = picture
         if picture:
-            picture.connect("notify::paintable", lambda *args: self.queue_draw())
+            follow_picture_size(self, picture)
+            # Deliberately still only on a new paintable: re-fitting the crop
+            # selection is destructive, and a canvas resize is not a new image.
             picture.connect("notify::paintable", lambda *args: self._apply_aspect_ratio())
 
     def _get_image_bounds(self) -> tuple[float, float, float, float]:

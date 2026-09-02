@@ -326,21 +326,66 @@ image.symbolic-circular {
   opacity: 0.7;
 }
 
-/* The preset button is accented so it reads apart from the mode toggles.
+/* The preset button is painted with the background it names -- the fill and the
+   ink that reads against it are set per preset from background_selector.py.
+   What is here is the part that does not change, plus the accent fill as the
+   fallback for a preset that has no background to preview.
    The style class lands on the menubutton node, so reach its child button. */
 .preset-menu-button > button {
   background-color: @accent_bg_color;
   color: @accent_fg_color;
   font-weight: bold;
+  transition: filter 0.2s ease;
 }
 
+/* Brightness rather than an overlay, because an overlay is a background-image
+   and would paint over the preset's own fill. */
 .preset-menu-button > button:hover {
-  background-image: image(alpha(@accent_fg_color, 0.1));
+  filter: brightness(1.08);
 }
 
 .preset-menu-button > button:active,
 .preset-menu-button > button:checked {
-  background-image: image(alpha(@accent_fg_color, 0.2));
+  filter: brightness(0.92);
+}
+
+/* An icon on its own beside the preset button, so keep it near square rather
+   than letting the default button padding stretch it. */
+.preset-save-button {
+  min-width: 24px;
+}
+
+/* Green only while there is something to save. The class is added and removed
+   with the divergence, so the insensitive state stays the plain button it was
+   and the colour is what draws the eye. */
+.preset-save-button.has-changes {
+  background-color: @success_bg_color;
+  color: @success_fg_color;
+}
+
+.preset-save-button.has-changes:hover {
+  background-image: image(alpha(@success_fg_color, 0.1));
+}
+
+.preset-save-button.has-changes:active {
+  background-image: image(alpha(@success_fg_color, 0.2));
+}
+
+/* One thumbnail per preset row, painted with that preset's own background.
+   Square and the same size for every preset, so the names beside them all start
+   at the same place -- sized here as well as in code, so the tile holds its
+   shape even for a preset whose preview could not be rendered.
+   The checkerboard is the tile's own backing rather than a special case: each
+   mode covers it with a child, so it is what shows through a translucent
+   colour, and what is left when there is no background to draw at all. */
+.preset-swatch {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px alpha(@borders, 0.7);
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h10v10H0zM10 10h10v10H10z' fill='%23e5e5e5'/%3E%3C/svg%3E");
+  background-color: #b2b2b2;
+  background-size: 12px 12px;
 }
 
 .destructive-label label {

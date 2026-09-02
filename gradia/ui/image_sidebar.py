@@ -59,6 +59,8 @@ class ImageSidebar(Adw.Bin):
     image_options_expander: Adw.ExpanderRow = Gtk.Template.Child()
     file_info_expander: Adw.ExpanderRow = Gtk.Template.Child()
     preset_button: Gtk.MenuButton = Gtk.Template.Child()
+    preset_bar: Gtk.Box = Gtk.Template.Child()
+    save_preset_button: Gtk.Button = Gtk.Template.Child()
     rotation_row: Adw.ActionRow = Gtk.Template.Child()
     padding_slider_row: Adw.ActionRow = Gtk.Template.Child()
     corner_radius_slider_row: Adw.ActionRow = Gtk.Template.Child()
@@ -83,8 +85,9 @@ class ImageSidebar(Adw.Bin):
         self.background_selector.set_current_mode_callback(self._on_background_mode_changed)
 
         # Straight into the sidebar column, so its sections line up with the rest.
-        self.content_box.insert_child_after(self.background_selector, self.preset_button)
+        self.content_box.insert_child_after(self.background_selector, self.preset_bar)
         self.background_selector.attach_preset_button(self.preset_button)
+        self.background_selector.attach_preset_save_button(self.save_preset_button)
 
         self._setup_widgets()
         self._connect_signals()
@@ -179,7 +182,7 @@ class ImageSidebar(Adw.Bin):
     def _on_aspect_ratio_changed(self, widget, ratio) -> None:
         if not self._updating_widgets:
             self.settings.image_aspect_ratio = ratio
-            self.background_selector.save_active_preset()
+            self.background_selector.refresh_preset_dirty_state()
             self._notify_image_options_changed()
 
     def _connect_signals(self) -> None:
@@ -196,28 +199,28 @@ class ImageSidebar(Adw.Bin):
         if not self._updating_widgets:
             value = int(widget.get_value())
             self.settings.image_padding = value
-            self.background_selector.save_active_preset()
+            self.background_selector.refresh_preset_dirty_state()
             self._notify_image_options_changed()
 
     def _on_corner_radius_changed(self, widget) -> None:
         if not self._updating_widgets:
             value = int(widget.get_value())
             self.settings.image_corner_radius = value
-            self.background_selector.save_active_preset()
+            self.background_selector.refresh_preset_dirty_state()
             self._notify_image_options_changed()
 
     def _on_shadow_strength_changed(self, widget) -> None:
         if not self._updating_widgets:
             value = int(widget.get_value())
             self.settings.image_shadow_strength = value
-            self.background_selector.save_active_preset()
+            self.background_selector.refresh_preset_dirty_state()
             self._notify_image_options_changed()
 
     def _on_auto_balance_changed(self, widget, pspec) -> None:
         if not self._updating_widgets:
             value = widget.get_active()
             self.settings.image_auto_balance = value
-            self.background_selector.save_active_preset()
+            self.background_selector.refresh_preset_dirty_state()
             self._notify_image_options_changed()
 
     def _on_rotate_left_clicked(self, button: Gtk.Button) -> None:

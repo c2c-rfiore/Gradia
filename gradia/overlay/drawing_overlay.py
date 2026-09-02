@@ -20,6 +20,7 @@ from gi.repository import Adw, Gdk, Gio, Graphene, Gtk, GObject
 from typing import Tuple
 from enum import Enum
 
+from gradia.overlay.picture_geometry import follow_picture_size
 from gradia.overlay.drawing_actions import *
 from gradia.overlay.text_entry_popover import TextEntryPopover
 
@@ -119,7 +120,7 @@ class DrawingOverlay(Gtk.Widget):
 
     def set_picture_reference(self, picture: Gtk.Picture) -> None:
         self.picture_widget = picture
-        picture.connect("notify::paintable", lambda *args: self.queue_draw())
+        follow_picture_size(self, picture)
 
     def set_erase_selected_revealer(self, erase_selected_revealer: Gtk.Revealer) -> None:
         self.erase_selected_revealer = erase_selected_revealer

@@ -147,7 +147,12 @@ class GradiaMainWindow(Adw.ApplicationWindow):
 
         self.create_action("open-folder", lambda *_: self.open_loaded_image_folder(), enabled=False)
         self.create_action("save", lambda *_: self.export_manager.save_to_file(), ["<Primary>s"], enabled=False)
+        # Ctrl+C is shared with the annotation clipboard and prefers a selected
+        # element; the toolbar button says "Copy to Clipboard" and is the only
+        # way to ask for the image, so it must never mean anything else.
         self.create_action("copy", lambda *_: self._copy(), ["<Primary>c"], enabled=False)
+        self.create_action("copy-image", lambda *_: self.export_manager.copy_to_clipboard(),
+                           enabled=False)
         self.create_action("command", lambda *_: self._run_custom_command(), ["<Primary>m"])
 
         self.create_action("aspect-ratio-crop", lambda _, variant: self.image_bin.set_aspect_ratio(variant.get_double()), vt="d")
@@ -387,6 +392,11 @@ class GradiaMainWindow(Adw.ApplicationWindow):
 
     def set_image(self, image: LoadedImage, copy_after_processing=False):
         self.image = image
+        # The preview is composited on the GPU from its own uploaded texture, but
+        # export still renders through Pillow and reads the source from here. It
+        # is the only thing that hands the processor an image, so without it
+        # every save and copy fails on "No full resolution image loaded".
+        self.processor.set_image(image)
         self.drawing_overlay.clear_drawing()
         self.image_bin.reset_crop_selection(silent=True)
         self.sidebar.reset_rotation()
@@ -481,6 +491,7 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         self.sidebar.processed_size_row.set_subtitle(size_str)
 
     def _copy(self) -> None:
+        """Ctrl+C only. The toolbar button goes straight to win.copy-image."""
         # A selected annotation is the narrower target: copy that, not the whole image.
         if self.drawing_overlay.copy_selected_action():
             self._show_notification(_("Annotation Copied"))
@@ -510,7 +521,7 @@ class GradiaMainWindow(Adw.ApplicationWindow):
 
     def _set_export_ready(self, enabled: bool) -> None:
         self.image_ready = True
-        for action_name in ["save", "copy"]:
+        for action_name in ["save", "copy", "copy-image"]:
             action = self.lookup_action(action_name)
             if action:
                 action.set_enabled(enabled)
