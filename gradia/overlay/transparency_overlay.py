@@ -18,6 +18,8 @@
 from typing import Any
 from gi.repository import Gtk, Gdk, Graphene
 
+from gradia.overlay.picture_geometry import follow_picture_size
+
 class TransparencyBackground(Gtk.Widget):
     __gtype_name__ = "GradiaTransparencyBackground"
 
@@ -56,7 +58,7 @@ class TransparencyBackground(Gtk.Widget):
     def set_picture_reference(self, picture: Gtk.Picture) -> None:
         self.picture_widget = picture
         if picture:
-            picture.connect("notify::paintable", lambda *args: self.queue_draw())
+            follow_picture_size(self, picture)
 
     def _calculate_geometry(self) -> tuple[float, float, float, float, float]:
         offset_x, offset_y, display_width, display_height = self._get_image_bounds()

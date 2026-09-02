@@ -186,7 +186,7 @@ class BackgroundSelector(Adw.Bin):
         """Adopt the save button the sidebar shows beside the preset button."""
         self.save_preset_button = button
         button.connect("clicked", lambda _button: self.commit_active_preset())
-        button.set_sensitive(self._preset_dirty)
+        self._update_save_button()
 
     def _on_preset_row_activated(self, _list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         if self._preset_list_busy:
@@ -271,8 +271,17 @@ class BackgroundSelector(Adw.Bin):
             return
 
         self._preset_dirty = dirty
-        if self.save_preset_button is not None:
-            self.save_preset_button.set_sensitive(dirty)
+        self._update_save_button()
+
+    def _update_save_button(self) -> None:
+        """Live and green while there are unsaved changes, plain and dim otherwise."""
+        if self.save_preset_button is None:
+            return
+        self.save_preset_button.set_sensitive(self._preset_dirty)
+        if self._preset_dirty:
+            self.save_preset_button.add_css_class("has-changes")
+        else:
+            self.save_preset_button.remove_css_class("has-changes")
 
     def commit_active_preset(self) -> None:
         """Overwrite the selected preset with the settings currently on screen."""

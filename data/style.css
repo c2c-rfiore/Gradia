@@ -355,6 +355,22 @@ image.symbolic-circular {
   min-width: 24px;
 }
 
+/* Green only while there is something to save. The class is added and removed
+   with the divergence, so the insensitive state stays the plain button it was
+   and the colour is what draws the eye. */
+.preset-save-button.has-changes {
+  background-color: @success_bg_color;
+  color: @success_fg_color;
+}
+
+.preset-save-button.has-changes:hover {
+  background-image: image(alpha(@success_fg_color, 0.1));
+}
+
+.preset-save-button.has-changes:active {
+  background-image: image(alpha(@success_fg_color, 0.2));
+}
+
 /* One thumbnail per preset row, painted with that preset's own background.
    Square and the same size for every preset, so the names beside them all start
    at the same place -- sized here as well as in code, so the tile holds its
