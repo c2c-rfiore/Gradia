@@ -16,18 +16,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from collections.abc import Callable
-import copy
 import os
-import threading
 from typing import Any, Optional
 
-from gi.repository import Adw, GLib, GObject, Gdk, GdkPixbuf, Gio, Gtk, Xdp
+from gi.repository import Adw, GLib, GObject, Gdk, Gio, Gtk, Xdp
 
 from gradia.clipboard import *
 from gradia.graphics.background import Background
 from gradia.graphics.gradient import GradientBackground
 from gradia.graphics.image import ImageBackground
 from gradia.graphics.image_processor import ImageProcessor
+from gradia.graphics.gsk_compositor import (
+    CompositePaintable, GskCompositor, compute_geometry)
 from gradia.graphics.solid import SolidBackground
 from gradia.overlay.drawing_actions import DrawingMode
 from gradia.ui.background_selector import BackgroundSelector
@@ -87,7 +87,9 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         self.start_screenshot = start_screenshot
         self.file_path: Optional[str] = file_path
         self.image: Optional[LoadedImage] = None
-        self.processed_pixbuf: Optional[Gdk.Pixbuf] = None
+        # True once a preview node exists; the export paths use it to decide
+        # whether there is anything to export.
+        self.preview_ready: bool = False
         self.image_ready = False
         self.show_close_confirmation = False
 
@@ -97,14 +99,12 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         if build_type == "debug":
             self.add_css_class("devel")
 
+        # self.processor stays the authoritative settings object, and still
+        # renders the full-resolution export through Pillow. The preview is
+        # composited on the GPU instead -- see gsk_compositor.
         self.processor: ImageProcessor = ImageProcessor()
-
-        # Preview pipeline state. See process_image() for why requests are
-        # coalesced instead of queued.
-        self._preview_generation: int = 0
-        self._preview_running: bool = False
-        self._preview_pending: bool = False
-        self._preview_callbacks: list[Callable[[], None]] = []
+        self.gsk_compositor: GskCompositor = GskCompositor()
+        self.composite_paintable: CompositePaintable = CompositePaintable()
         self._setup_actions()
         self._setup_image_stack()
         self._setup_clipboard_handoff()
@@ -365,29 +365,21 @@ class GradiaMainWindow(Adw.ApplicationWindow):
 
     def process_image(self, callback: Optional[Callable[[], None]] = None) -> None:
         """
-        Request a preview composite using the processor's current settings.
+        Rebuild the preview from the processor's current settings.
 
-        Requests are coalesced, not queued. A full composite costs tens of
-        milliseconds while a slider emits value-changed at input rate, so
-        spawning a thread per event left dozens of redundant composites
-        competing for cores with the preview trailing the pointer. At most one
-        pass runs at a time; everything requested while it is in flight
-        collapses into a single follow-up pass that picks up the newest
-        settings.
+        This is synchronous, and can afford to be: the composite is a GSK node
+        tree the GPU draws as part of the frame it was already going to draw, so
+        rebuilding it costs tens of microseconds rather than the tens of
+        milliseconds the Pillow path cost. Nothing here needs a worker thread,
+        a debounce, or the generation guard that scheduling one used to need.
         """
         if not self.image:
             return
 
+        self._rebuild_preview()
+
         if callback:
-            self._preview_callbacks.append(callback)
-
-        self._preview_generation += 1
-
-        if self._preview_running:
-            self._preview_pending = True
-            return
-
-        self._start_preview_pass()
+            callback()
 
     """
     Private Methods
@@ -431,91 +423,58 @@ class GradiaMainWindow(Adw.ApplicationWindow):
         if self.image:
             self.process_image()
 
-    def _start_preview_pass(self) -> None:
+    def _preview_geometry(self):
+        """Resolve the current settings into canvas rectangles."""
+        return compute_geometry(
+            self.image.preview_image.width,
+            self.image.preview_image.height,
+            padding=self.processor.padding,
+            corner_radius=self.processor.corner_radius,
+            aspect_ratio=self.processor.aspect_ratio,
+            rotation=self.processor.rotation,
+            balanced_padding=self.image.balanced_padding,
+            auto_balance=self.processor.auto_balance,
+        )
+
+    def _rebuild_preview(self) -> None:
         image = self.image
-        if image is None:
-            self._preview_running = False
-            self._preview_pending = False
+        if image is None or image.preview_image is None:
             return
 
-        self._preview_running = True
-        self._preview_pending = False
-        generation = self._preview_generation
-
-        # The worker gets its own processor, and its own copy of the background,
-        # so that a slider moved mid-composite cannot change the settings out
-        # from under a pass already running. self.processor stays the
-        # authoritative current-settings object that the export paths read.
-        worker_processor = ImageProcessor(
-            background=copy.copy(self.processor.background),
-            padding=self.processor.padding,
-            aspect_ratio=self.processor.aspect_ratio,
-            corner_radius=self.processor.corner_radius,
-            shadow_strength=self.processor.shadow_strength,
-            auto_balance=self.processor.auto_balance,
-            rotation=self.processor.rotation,
-        )
-
-        threading.Thread(
-            target=self._process_in_background,
-            args=(worker_processor, image, generation),
-            daemon=True,
-        ).start()
-
-    def _process_in_background(
-        self,
-        processor: ImageProcessor,
-        image: LoadedImage,
-        generation: int
-    ) -> None:
-        result: Optional[tuple[GdkPixbuf.Pixbuf, int, int]] = None
         try:
-            processor.set_image(image)
-            result = processor.process()
+            # Uploaded once per image; every later setting change reuses it.
+            self.gsk_compositor.set_source_image(image.preview_image, key=id(image))
+
+            geo = self._preview_geometry()
+            node = self.gsk_compositor.build(
+                geo,
+                background=self.processor.background,
+                shadow_strength=self.processor.shadow_strength,
+                rotation=self.processor.rotation,
+            )
         except Exception as e:
-            print(f"Error processing image: {e}")
+            print(f"Error building preview: {e}")
+            return
 
-        # Every widget touch happens back on the main thread: GTK is not
-        # thread-safe, and the sidebar size label used to be written from here.
-        GLib.idle_add(
-            self._finish_preview_pass, result, generation,
-            priority=GLib.PRIORITY_DEFAULT
-        )
+        if node is None:
+            return
 
-    def _finish_preview_pass(
-        self,
-        result: Optional[tuple[GdkPixbuf.Pixbuf, int, int]],
-        generation: int
-    ) -> bool:
-        self._preview_running = False
+        self.composite_paintable.set_node(node, geo.canvas_width, geo.canvas_height)
+        if self.picture.get_paintable() is not self.composite_paintable:
+            self.picture.set_paintable(self.composite_paintable)
 
-        # A pass whose settings were superseded while it ran must not publish:
-        # threads finish out of order, so a stale frame would leave the image
-        # showing one slider position while the sidebar shows another.
-        superseded = generation != self._preview_generation
+        self.preview_ready = True
+        self._update_processed_image_size(*self._full_resolution_size(geo))
+        self._hide_loading_state()
 
-        if result is not None and not superseded:
-            pixbuf, true_width, true_height = result
-            self.processed_pixbuf = pixbuf
-            self._update_processed_image_size(true_width, true_height)
-            self._update_image_preview()
-
-            callbacks = self._preview_callbacks
-            self._preview_callbacks = []
-            for preview_callback in callbacks:
-                preview_callback()
-
-        if superseded or self._preview_pending:
-            self._start_preview_pass()
-
-        return False
-
-    def _update_image_preview(self) -> bool:
-        if self.processed_pixbuf:
-            paintable: Gdk.Paintable = Gdk.Texture.new_for_pixbuf(self.processed_pixbuf)
-            self.picture.set_paintable(paintable)
-            self._hide_loading_state()
-        return False
+    def _full_resolution_size(self, geo) -> tuple[int, int]:
+        """What the canvas measures once rendered at the source's real size."""
+        image = self.image
+        if not image or not image.full_res_image or not image.preview_image:
+            return geo.canvas_width, geo.canvas_height
+        scale = max(image.full_res_image.width / image.preview_image.width,
+                    image.full_res_image.height / image.preview_image.height)
+        return int(geo.canvas_width * scale), int(geo.canvas_height * scale)
 
     def _update_processed_image_size(self, width, height) -> None:
         size_str: str = f"{width}×{height}"
