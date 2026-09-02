@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import cairo
-from gi.repository import Adw, Gdk, Gio, Gtk, GObject
+from gi.repository import Adw, Gdk, Gio, Graphene, Gtk, GObject
 from typing import Tuple
 from enum import Enum
 
@@ -55,7 +55,18 @@ class ResizeHandle(Enum):
         }
         return cursor_map.get(handle, "default")
 
-class DrawingOverlay(Gtk.DrawingArea):
+def _identity_coords(x, y) -> Tuple[float, float]:
+    """Projection used while rasterising an action into its cached node."""
+    return float(x), float(y)
+
+
+# A cached node is rasterised across the image plus a margin, so a stroke whose
+# line width or arrow head reaches past the image edge is not clipped out of its
+# own node before the overlay's own clip gets a say.
+NODE_CACHE_MARGIN = 64
+
+
+class DrawingOverlay(Gtk.Widget):
     __gtype_name__ = "GradiaDrawingOverlay"
 
     __gsignals__ = {
@@ -65,7 +76,10 @@ class DrawingOverlay(Gtk.DrawingArea):
     def __init__(self, **kwargs):
         super().__init__(can_focus=True, **kwargs)
 
-        self.set_draw_func(self._on_draw)
+        # Finished annotations are rasterised once into their own render node
+        # and composited on the GPU thereafter; see do_snapshot.
+        self._node_cache: dict[int, tuple] = {}
+        self._node_cache_size = None
 
         self.coordinate_transform = None
         self.delta_transform = None
@@ -923,19 +937,122 @@ class DrawingOverlay(Gtk.DrawingArea):
         else:
             return "pointer" if self._find_action_at_point(img_x, img_y) else "default"
 
-    def _on_draw(self, area, cr: cairo.Context, width: int, height: int):
-        scale = self._get_scale_factor()
-        ox, oy, dw, dh = self._get_image_bounds()
+    def _action_node(self, action, image_width: int, image_height: int):
+        """
+        The action, rasterised once in image space.
 
+        Drawn with the identity projection at scale 1.0 so the node is
+        independent of zoom, pan and window size -- do_snapshot applies those
+        as a transform, which is what lets the node survive between frames.
+
+        The cache holds the action alongside its node. That keeps the action
+        alive, so its id cannot be recycled onto a different object while a node
+        is cached under it, and it makes the identity check below meaningful.
+        """
+        key = id(action)
+        cached = self._node_cache.get(key)
+        if cached is not None and cached[0] is action:
+            return cached[1]
+
+        bounds = Graphene.Rect().init(
+            -image_width / 2 - NODE_CACHE_MARGIN,
+            -image_height / 2 - NODE_CACHE_MARGIN,
+            image_width + 2 * NODE_CACHE_MARGIN,
+            image_height + 2 * NODE_CACHE_MARGIN)
+
+        snapshot = Gtk.Snapshot()
+        cr = snapshot.append_cairo(bounds)
         cr.set_line_cap(cairo.LineCap.ROUND)
         cr.set_line_join(cairo.LineJoin.ROUND)
-        cr.rectangle(ox, oy, dw, dh)
-        cr.clip()
+        action.draw(cr, _identity_coords, 1.0)
+        node = snapshot.to_node()
 
-        for action in self.actions:
-            if action == self.editing_text_action and self.is_text_editing:
-                continue
-            action.draw(cr, self._image_to_widget_coords, scale)
+        self._node_cache[key] = (action, node)
+        return node
+
+    def _sync_node_cache(self, image_width: int, image_height: int) -> None:
+        """
+        Drop nodes for annotations that are gone, and keep the rest.
+
+        Pruning rather than clearing is the whole value: adding the fiftieth
+        stroke must not throw away the forty-nine already rasterised. Nodes are
+        tied to the image size, so a new image starts over.
+        """
+        size = (image_width, image_height)
+        if size != self._node_cache_size:
+            self._node_cache.clear()
+            self._node_cache_size = size
+            return
+
+        if len(self._node_cache) <= len(self.actions):
+            # Nothing can have gone missing without the count dropping, and an
+            # entry replaced in place is caught by the identity check on read.
+            present = {id(a) for a in self.actions}
+            if all(key in present for key in self._node_cache):
+                return
+
+        present = {id(a) for a in self.actions}
+        for key in [k for k in self._node_cache if k not in present]:
+            del self._node_cache[key]
+
+    def invalidate_node_cache(self) -> None:
+        self._node_cache.clear()
+        self._node_cache_size = None
+
+    def _is_live(self, action) -> bool:
+        """An action being edited is redrawn every frame instead of cached."""
+        if action is self.selected_action:
+            return True
+        if self.is_text_editing and action is self.editing_text_action:
+            return True
+        return False
+
+    def do_snapshot(self, snapshot) -> None:
+        ox, oy, dw, dh = self._get_image_bounds()
+        if dw <= 0 or dh <= 0:
+            return
+
+        scale = self._get_scale_factor()
+        image_width, image_height = self._get_modified_image_bounds()
+        self._sync_node_cache(image_width, image_height)
+
+        snapshot.push_clip(Graphene.Rect().init(ox, oy, dw, dh))
+
+        # Settled annotations: cached nodes, placed by one transform. This is
+        # the whole point -- adding the fiftieth stroke no longer re-rasterises
+        # the other forty-nine.
+        if self.actions and scale > 0:
+            snapshot.save()
+            snapshot.translate(Graphene.Point().init(
+                ox + (image_width / 2) * scale, oy + (image_height / 2) * scale))
+            snapshot.scale(scale, scale)
+            for action in self.actions:
+                if self.is_text_editing and action is self.editing_text_action:
+                    continue
+                if self._is_live(action):
+                    # Evict rather than merely skip: the action is being moved
+                    # or restyled, so any node cached before it was picked up is
+                    # already wrong and must not be served when it settles.
+                    self._node_cache.pop(id(action), None)
+                    continue
+                node = self._action_node(action, image_width, image_height)
+                if node is not None:
+                    snapshot.append_node(node)
+            snapshot.restore()
+
+        # Everything still moving under the pointer, drawn in widget space
+        # exactly as before.
+        cr = snapshot.append_cairo(Graphene.Rect().init(ox, oy, dw, dh))
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.set_line_join(cairo.LineJoin.ROUND)
+        self._draw_live(cr, scale)
+
+        snapshot.pop()
+
+    def _draw_live(self, cr: cairo.Context, scale: float) -> None:
+        if self.selected_action is not None and not (
+                self.is_text_editing and self.selected_action is self.editing_text_action):
+            self.selected_action.draw(cr, self._image_to_widget_coords, scale)
 
         if self.is_drawing and self.options.mode != DrawingMode.TEXT and self.options.mode != DrawingMode.NUMBER:
             cr.set_source_rgba(*self.options.primary_color)
