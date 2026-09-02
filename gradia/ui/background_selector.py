@@ -74,7 +74,10 @@ class BackgroundSelector(Adw.Bin):
         self._preset_list_busy = False
         # Owned by the sidebar, which shows them above the sections.
         self.preset_button: Optional[Gtk.MenuButton] = None
+        self.save_preset_button: Optional[Gtk.Button] = None
         self._button_fill_provider: Optional[Gtk.CssProvider] = None
+        self._background_cache: dict[tuple, Optional[Background]] = {}
+        self._button_css_cache: dict[tuple, str] = {}
         self._preset_dirty = False
         self._image_options_getter: Optional[ImageOptionsGetter] = None
         self._image_options_applier: Optional[ImageOptionsApplier] = None
@@ -132,14 +135,6 @@ class BackgroundSelector(Adw.Bin):
         box.append(scroller)
 
         box.append(Gtk.Separator(margin_top=3, margin_bottom=3))
-        # Insensitive rather than hidden while the preset is untouched: it keeps
-        # the menu from resizing as you edit, and it is how Delete already
-        # behaves when there is only one preset left.
-        self.save_preset_button = self._popover_button(
-            _("Update Preset"), "document-save-symbolic", self.commit_active_preset
-        )
-        self.save_preset_button.set_sensitive(False)
-        box.append(self.save_preset_button)
         self.rename_preset_button = self._popover_button(
             _("Rename…"), "document-edit-symbolic", self._on_preset_rename
         )
@@ -186,6 +181,12 @@ class BackgroundSelector(Adw.Bin):
         self.preset_button = button
         button.set_popover(self.preset_popover)
         self._refresh_presets()
+
+    def attach_preset_save_button(self, button: Gtk.Button) -> None:
+        """Adopt the save button the sidebar shows beside the preset button."""
+        self.save_preset_button = button
+        button.connect("clicked", lambda _button: self.commit_active_preset())
+        button.set_sensitive(self._preset_dirty)
 
     def _on_preset_row_activated(self, _list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         if self._preset_list_busy:
@@ -270,8 +271,8 @@ class BackgroundSelector(Adw.Bin):
             return
 
         self._preset_dirty = dirty
-        self.save_preset_button.set_sensitive(dirty)
-        self._update_preset_button_label()
+        if self.save_preset_button is not None:
+            self.save_preset_button.set_sensitive(dirty)
 
     def commit_active_preset(self) -> None:
         """Overwrite the selected preset with the settings currently on screen."""
@@ -356,126 +357,111 @@ class BackgroundSelector(Adw.Bin):
         finally:
             self._preset_list_busy = False
 
-        self._update_preset_button_label()
+        if self.preset_button is not None:
+            self.preset_button.set_label(self.preset_store.active.name)
         self._paint_preset_button()
         self.delete_preset_button.set_sensitive(len(self.preset_store.presets) > 1)
 
-    def _update_preset_button_label(self) -> None:
-        """The preset's name, and whether it currently has unsaved changes."""
-        if self.preset_button is None:
-            return
-
-        name = self.preset_store.active.name
-        # Saving lives inside the menu now, so the dot is the only sign of a
-        # divergence from outside it -- without one you could edit, switch
-        # preset and lose the edits without ever having been told.
-        self.preset_button.set_label(f"{name} •" if self._preset_dirty else name)
-        self.preset_button.set_tooltip_text(
-            _("Background Preset — unsaved changes") if self._preset_dirty
-            else _("Background Preset")
-        )
-
     """
-    Preset Swatches
+    Preset Previews
     """
 
     SWATCH_SIZE = 34
+    # The button's fill is rendered once at roughly its own proportions and then
+    # stretched to whatever width the sidebar ends up at.
+    BUTTON_FILL_WIDTH = 320
+    BUTTON_FILL_HEIGHT = 40
+    # Matches is_light_color_hex: 0.299r + 0.587g + 0.114b, out of 255.
+    LIGHT_INK_ABOVE = 130
+
+    def _background_for(self, preset: BackgroundPreset) -> Optional[Background]:
+        """
+        The preset's background, ready to render, kept between refreshes.
+
+        Cached on what the preset paints rather than on the whole preset, so
+        renaming one or nudging its padding does not throw the render away --
+        and an image preset is decoded once instead of on every refresh.
+        """
+        key = preset.background_key()
+        if key in self._background_cache:
+            return self._background_cache[key]
+
+        background: Optional[Background] = None
+        try:
+            if preset.mode == "solid":
+                background = SolidBackground(
+                    color=preset.solid.get("color", "#000000"),
+                    alpha=float(preset.solid.get("alpha", 1.0)),
+                )
+            elif preset.mode == "gradient":
+                background = GradientBackground.from_json(json.dumps(preset.gradient))
+            elif preset.mode == "image":
+                file_path = preset.image.get("file_path") or ""
+                if file_path:
+                    background = ImageBackground(file_path)
+        except Exception as error:
+            print(f"Could not prepare a preview for preset “{preset.name}”: {error}")
+            background = None
+
+        self._background_cache[key] = background
+        return background
+
+    def _render_preset(self, preset: BackgroundPreset, width: int, height: int):
+        """The preset's background as a PIL image, or None if it has none."""
+        background = self._background_for(preset)
+        if background is None:
+            return None
+        try:
+            return background.prepare_image(width, height)
+        except Exception as error:
+            print(f"Could not render preset “{preset.name}”: {error}")
+            return None
+
+    @staticmethod
+    def _texture(image) -> Gdk.Texture:
+        if image.mode != "RGBA":
+            image = image.convert("RGBA")
+        return Gdk.MemoryTexture.new(
+            image.width, image.height,
+            Gdk.MemoryFormat.R8G8B8A8,
+            GLib.Bytes.new(image.tobytes()),
+            image.width * 4,
+        )
 
     def _preset_swatch(self, preset: BackgroundPreset) -> Gtk.Widget:
         """
         A thumbnail of what the preset paints, for its row in the popover.
 
-        The tile itself is a checkerboard and every mode covers it with a child
-        widget. That is what makes transparency read correctly without a case
-        for it: a solid at less than full alpha lets the checks through, and a
-        preset with no background -- or one whose image file has since gone --
-        simply has no child, so the checkerboard is what you see.
+        Every mode goes through the same render at exactly the swatch size, so
+        the tiles are identical in size and the names beside them all start at
+        the same place. Handing GTK a picture and asking it to shrink would not:
+        a widget's size request is a floor, so an image background would have
+        stretched the row to the photograph's own width.
+
+        The tile underneath is a checkerboard, which is therefore what shows
+        through a background that is partly transparent, and what is left when
+        there is no background at all -- or when the image file has since moved.
         """
         swatch = Adw.Bin(
             width_request=self.SWATCH_SIZE,
             height_request=self.SWATCH_SIZE,
+            hexpand=False,
+            vexpand=False,
+            halign=Gtk.Align.CENTER,
             valign=Gtk.Align.CENTER,
             overflow=Gtk.Overflow.HIDDEN,
         )
         swatch.add_css_class("preset-swatch")
 
-        if preset.mode == "solid":
-            self._fill_solid_swatch(swatch, preset)
-        elif preset.mode == "gradient":
-            self._fill_gradient_swatch(swatch, preset)
-        elif preset.mode == "image":
-            self._fill_image_swatch(swatch, preset.image.get("file_path", ""))
+        image = self._render_preset(preset, self.SWATCH_SIZE, self.SWATCH_SIZE)
+        if image is not None:
+            swatch.set_child(Gtk.Picture(
+                paintable=self._texture(image),
+                content_fit=Gtk.ContentFit.FILL,
+                can_shrink=True,
+            ))
 
         return swatch
-
-    def _fill_solid_swatch(self, swatch: Adw.Bin, preset: BackgroundPreset) -> None:
-        rgba = hex_to_rgba(
-            preset.solid.get("color", "#000000"),
-            float(preset.solid.get("alpha", 1.0)),
-        )
-        fill = Adw.Bin(hexpand=True, vexpand=True)
-        fill.add_css_class("preset-swatch-fill")
-
-        provider = Gtk.CssProvider()
-        provider.load_from_string(
-            f".preset-swatch-fill {{ background-color: {rgba.to_string()}; }}"
-        )
-        fill.get_style_context().add_provider(
-            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3
-        )
-        swatch.set_child(fill)
-
-    def _fill_gradient_swatch(self, swatch: Adw.Bin, preset: BackgroundPreset) -> None:
-        """
-        Draw the gradient with the same generator the canvas uses.
-
-        CSS could express a linear gradient, but not every mode survives the
-        round trip -- and a swatch that renders through a second, similar-but-
-        different path is exactly the kind that quietly stops matching the
-        canvas. This one cannot: it is the canvas code, at 34 pixels.
-        """
-        try:
-            background = GradientBackground.from_json(json.dumps(preset.gradient))
-            image = background.prepare_image(self.SWATCH_SIZE, self.SWATCH_SIZE)
-            texture = Gdk.MemoryTexture.new(
-                image.width, image.height,
-                Gdk.MemoryFormat.R8G8B8A8,
-                GLib.Bytes.new(image.tobytes()),
-                image.width * 4,
-            )
-        except Exception as error:
-            print(f"Could not draw a swatch for preset “{preset.name}”: {error}")
-            return
-
-        swatch.set_child(Gtk.Picture(paintable=texture, content_fit=Gtk.ContentFit.FILL))
-
-    def _fill_image_swatch(self, swatch: Adw.Bin, file_path: str) -> None:
-        picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER)
-        try:
-            if not file_path:
-                raise ValueError("the preset has no background image")
-            if file_path.startswith(rootdir):
-                picture.set_resource(file_path)
-            else:
-                picture.set_filename(file_path)
-            if picture.get_paintable() is None:
-                raise ValueError(f"nothing decoded from {file_path}")
-        except Exception as error:
-            print(f"Could not draw an image swatch: {error}")
-            return
-
-        swatch.set_child(picture)
-
-    """
-    Painting the Preset Button
-    """
-
-    # The gradient is rendered once at roughly the button's own proportions and
-    # then stretched to whatever width the sidebar ends up at.
-    BUTTON_FILL_WIDTH = 320
-    BUTTON_FILL_HEIGHT = 40
-    # Matches is_light_color_hex: 0.299r + 0.587g + 0.114b, out of 255.
-    LIGHT_INK_BELOW = 130
 
     def _paint_preset_button(self) -> None:
         """
@@ -510,11 +496,45 @@ class BackgroundSelector(Adw.Bin):
         self._button_fill_provider = provider
 
     def _preset_button_css(self, preset: BackgroundPreset) -> str:
-        fill, luminance = self._preset_button_fill(preset)
-        if fill is None:
-            return ""
+        key = preset.background_key()
+        if key in self._button_css_cache:
+            return self._button_css_cache[key]
 
-        if luminance is not None and luminance >= self.LIGHT_INK_BELOW:
+        css = self._build_preset_button_css(preset)
+        self._button_css_cache[key] = css
+        return css
+
+    def _build_preset_button_css(self, preset: BackgroundPreset) -> str:
+        if preset.mode == "solid":
+            # A flat colour is crisper drawn by the CSS engine than resampled
+            # from a bitmap, and it is the one case that needs no bitmap.
+            try:
+                rgba = hex_to_rgba(
+                    preset.solid.get("color", "#000000"),
+                    float(preset.solid.get("alpha", 1.0)),
+                )
+                fill = f"background-image: none; background-color: {rgba.to_string()};"
+                luminance = self._luminance(parse_rgb_string(preset.solid.get("color", "#000000")))
+            except Exception as error:
+                print(f"Could not paint the preset button for “{preset.name}”: {error}")
+                return ""
+        else:
+            image = self._render_preset(
+                preset, self.BUTTON_FILL_WIDTH, self.BUTTON_FILL_HEIGHT)
+            if image is None:
+                return ""
+            # Inlining the render rather than writing the gradient back out as
+            # CSS is what keeps the button, the swatch and the canvas from
+            # drifting: all three come from the same generator. It also settles
+            # the ink for an image background without a second decode.
+            fill = (
+                f'background-image: url("{self._png_data_uri(image)}");'
+                " background-color: transparent;"
+                " background-size: 100% 100%; background-repeat: no-repeat;"
+            )
+            luminance = self._mean_luminance(image)
+
+        if luminance >= self.LIGHT_INK_ABOVE:
             ink, shadow = "rgba(0, 0, 0, 0.85)", "0 1px 1px alpha(white, 0.35)"
         else:
             ink, shadow = "#ffffff", "0 1px 2px alpha(black, 0.45)"
@@ -523,56 +543,6 @@ class BackgroundSelector(Adw.Bin):
             ".preset-menu-button > button {"
             f" {fill} color: {ink}; text-shadow: {shadow}; }}"
         )
-
-    def _preset_button_fill(self, preset: BackgroundPreset) -> tuple[Optional[str], Optional[float]]:
-        """The CSS that paints this preset, and how bright it comes out."""
-        try:
-            if preset.mode == "solid":
-                rgba = hex_to_rgba(
-                    preset.solid.get("color", "#000000"),
-                    float(preset.solid.get("alpha", 1.0)),
-                )
-                fill = f"background-image: none; background-color: {rgba.to_string()};"
-                return fill, self._luminance(parse_rgb_string(preset.solid.get("color", "#000000")))
-
-            if preset.mode == "gradient":
-                background = GradientBackground.from_json(json.dumps(preset.gradient))
-                image = background.prepare_image(
-                    self.BUTTON_FILL_WIDTH, self.BUTTON_FILL_HEIGHT)
-                fill = (
-                    f'background-image: url("{self._png_data_uri(image)}");'
-                    " background-color: transparent;"
-                    " background-size: 100% 100%; background-repeat: no-repeat;"
-                )
-                return fill, self._mean_luminance(image)
-
-            if preset.mode == "image":
-                uri = self._image_css_uri(preset.image.get("file_path") or "")
-                if uri is None:
-                    return None, None
-                # A photograph can be any brightness, and decoding it here just
-                # to find out would mean reading the whole file on every preset
-                # change. A scrim settles it instead: dark enough that white
-                # text always holds, light enough to still read as the image.
-                fill = (
-                    f'background-image: image(alpha(black, 0.32)), url("{uri}");'
-                    " background-color: transparent;"
-                    " background-size: cover, cover;"
-                    " background-position: center, center;"
-                    " background-repeat: no-repeat, no-repeat;"
-                )
-                return fill, None
-        except Exception as error:
-            print(f"Could not paint the preset button for “{preset.name}”: {error}")
-
-        return None, None
-
-    def _image_css_uri(self, file_path: str) -> Optional[str]:
-        if not file_path:
-            return None
-        if file_path.startswith(rootdir):
-            return f"resource://{file_path}"
-        return GLib.filename_to_uri(file_path, None)
 
     @staticmethod
     def _png_data_uri(image) -> str:

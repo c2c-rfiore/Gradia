@@ -113,13 +113,23 @@ class BackgroundPreset:
         stored preset can carry hex colours and integer angles, while the live
         state comes back from the editors as rgb() strings and floats.
         """
-        return (self.mode,) + self._mode_fingerprint() + (
+        return self.background_key() + (
             int(self.image_options.get("padding", 0)),
             int(self.image_options.get("corner_radius", 0)),
             str(self.image_options.get("aspect_ratio") or ""),
             int(self.image_options.get("shadow_strength", 0)),
             bool(self.image_options.get("auto_balance", False)),
         )
+
+    def background_key(self) -> tuple:
+        """
+        What this preset paints, without the framing around it.
+
+        Two presets with the same key draw the same background, so the sidebar
+        uses it to avoid re-rendering -- and re-decoding an image file -- for a
+        preview it already has.
+        """
+        return (self.mode,) + self._mode_fingerprint()
 
     def _mode_fingerprint(self) -> tuple:
         if self.mode == "solid":

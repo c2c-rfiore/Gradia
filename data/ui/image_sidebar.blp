@@ -44,15 +44,32 @@ template $GradiaImageSidebar: Adw.Bin {
         valign: start;
         spacing: 12;
 
-        // Full width, like every section below it. Saving lives in the menu,
-        // so nothing sits beside this and narrows it.
-        MenuButton preset_button {
-          tooltip-text: _("Background Preset");
-          always-show-arrow: true;
+        Box preset_bar {
+          orientation: horizontal;
+          spacing: 6;
 
-          styles [
-            "preset-menu-button",
-          ]
+          MenuButton preset_button {
+            hexpand: true;
+            tooltip-text: _("Background Preset");
+            always-show-arrow: true;
+
+            styles [
+              "preset-menu-button",
+            ]
+          }
+
+          // Insensitive until the settings diverge from the preset, rather
+          // than hidden: the bar keeps one width, and the icon lighting up is
+          // the signal that there is something to save.
+          Button save_preset_button {
+            icon-name: "document-save-symbolic";
+            tooltip-text: _("Update Preset to Match Current Settings");
+            sensitive: false;
+
+            styles [
+              "preset-save-button",
+            ]
+          }
         }
 
         Adw.PreferencesGroup image_options_group {

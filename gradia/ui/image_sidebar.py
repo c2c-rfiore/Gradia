@@ -59,6 +59,8 @@ class ImageSidebar(Adw.Bin):
     image_options_expander: Adw.ExpanderRow = Gtk.Template.Child()
     file_info_expander: Adw.ExpanderRow = Gtk.Template.Child()
     preset_button: Gtk.MenuButton = Gtk.Template.Child()
+    preset_bar: Gtk.Box = Gtk.Template.Child()
+    save_preset_button: Gtk.Button = Gtk.Template.Child()
     rotation_row: Adw.ActionRow = Gtk.Template.Child()
     padding_slider_row: Adw.ActionRow = Gtk.Template.Child()
     corner_radius_slider_row: Adw.ActionRow = Gtk.Template.Child()
@@ -83,8 +85,9 @@ class ImageSidebar(Adw.Bin):
         self.background_selector.set_current_mode_callback(self._on_background_mode_changed)
 
         # Straight into the sidebar column, so its sections line up with the rest.
-        self.content_box.insert_child_after(self.background_selector, self.preset_button)
+        self.content_box.insert_child_after(self.background_selector, self.preset_bar)
         self.background_selector.attach_preset_button(self.preset_button)
+        self.background_selector.attach_preset_save_button(self.save_preset_button)
 
         self._setup_widgets()
         self._connect_signals()
