@@ -127,7 +127,7 @@ class BaseImageExporter:
 
     def _ensure_processed_image_available(self) -> bool:
         """Ensure processed image is available for export"""
-        if not self.window.processed_pixbuf:
+        if not self.window.preview_ready:
             raise Exception("No processed image available for export")
         return False
 
@@ -513,4 +513,4 @@ class ExportManager:
 
     def is_export_available(self) -> bool:
         """Check if export operations are available"""
-        return bool(self.window.processed_pixbuf)
+        return bool(self.window.preview_ready)
