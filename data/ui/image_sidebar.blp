@@ -44,40 +44,15 @@ template $GradiaImageSidebar: Adw.Bin {
         valign: start;
         spacing: 12;
 
-        // The save button sits beside the preset rather than inside its menu:
-        // it is only there when the live settings have diverged, and it needs
-        // to be reachable without opening the menu that would hide it.
-        Box preset_bar {
-          orientation: horizontal;
-          spacing: 6;
+        // Full width, like every section below it. Saving lives in the menu,
+        // so nothing sits beside this and narrows it.
+        MenuButton preset_button {
+          tooltip-text: _("Background Preset");
+          always-show-arrow: true;
 
-          MenuButton preset_button {
-            hexpand: true;
-            tooltip-text: _("Background Preset");
-            always-show-arrow: true;
-
-            styles [
-              "preset-menu-button",
-            ]
-          }
-
-          Revealer save_preset_revealer {
-            transition-type: crossfade;
-            transition-duration: 200;
-            reveal-child: false;
-
-            child: Button save_preset_button {
-              icon-name: "document-save-symbolic";
-              tooltip-text: _("Update Preset to Match Current Settings");
-              valign: center;
-
-              styles [
-                "raised",
-                "circular",
-                "preset-save-button",
-              ]
-            };
-          }
+          styles [
+            "preset-menu-button",
+          ]
         }
 
         Adw.PreferencesGroup image_options_group {

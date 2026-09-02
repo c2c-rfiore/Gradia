@@ -15,6 +15,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import base64
+import io
 import json
 from collections.abc import Callable
 from typing import Any, Optional
@@ -29,7 +31,7 @@ from gradia.graphics.background import Background
 from gradia.ui.widget.toggle_group import ToggleGroup
 from gradia.constants import rootdir  # pyright: ignore
 from gradia.backend.settings import Settings
-from gradia.utils.colors import hex_to_rgba
+from gradia.utils.colors import hex_to_rgba, parse_rgb_string
 from gradia.backend.background_preset import (
     MODES,
     BackgroundPreset,
@@ -72,7 +74,7 @@ class BackgroundSelector(Adw.Bin):
         self._preset_list_busy = False
         # Owned by the sidebar, which shows them above the sections.
         self.preset_button: Optional[Gtk.MenuButton] = None
-        self._save_revealer: Optional[Gtk.Revealer] = None
+        self._button_fill_provider: Optional[Gtk.CssProvider] = None
         self._preset_dirty = False
         self._image_options_getter: Optional[ImageOptionsGetter] = None
         self._image_options_applier: Optional[ImageOptionsApplier] = None
@@ -130,6 +132,14 @@ class BackgroundSelector(Adw.Bin):
         box.append(scroller)
 
         box.append(Gtk.Separator(margin_top=3, margin_bottom=3))
+        # Insensitive rather than hidden while the preset is untouched: it keeps
+        # the menu from resizing as you edit, and it is how Delete already
+        # behaves when there is only one preset left.
+        self.save_preset_button = self._popover_button(
+            _("Update Preset"), "document-save-symbolic", self.commit_active_preset
+        )
+        self.save_preset_button.set_sensitive(False)
+        box.append(self.save_preset_button)
         self.rename_preset_button = self._popover_button(
             _("Rename…"), "document-edit-symbolic", self._on_preset_rename
         )
@@ -176,12 +186,6 @@ class BackgroundSelector(Adw.Bin):
         self.preset_button = button
         button.set_popover(self.preset_popover)
         self._refresh_presets()
-
-    def attach_preset_save_button(self, button: Gtk.Button, revealer: Gtk.Revealer) -> None:
-        """Adopt the save control the sidebar shows beside the preset button."""
-        self._save_revealer = revealer
-        button.connect("clicked", lambda _button: self.commit_active_preset())
-        revealer.set_reveal_child(self._preset_dirty)
 
     def _on_preset_row_activated(self, _list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         if self._preset_list_busy:
@@ -266,8 +270,8 @@ class BackgroundSelector(Adw.Bin):
             return
 
         self._preset_dirty = dirty
-        if self._save_revealer is not None:
-            self._save_revealer.set_reveal_child(dirty)
+        self.save_preset_button.set_sensitive(dirty)
+        self._update_preset_button_label()
 
     def commit_active_preset(self) -> None:
         """Overwrite the selected preset with the settings currently on screen."""
@@ -352,9 +356,24 @@ class BackgroundSelector(Adw.Bin):
         finally:
             self._preset_list_busy = False
 
-        if self.preset_button is not None:
-            self.preset_button.set_label(self.preset_store.active.name)
+        self._update_preset_button_label()
+        self._paint_preset_button()
         self.delete_preset_button.set_sensitive(len(self.preset_store.presets) > 1)
+
+    def _update_preset_button_label(self) -> None:
+        """The preset's name, and whether it currently has unsaved changes."""
+        if self.preset_button is None:
+            return
+
+        name = self.preset_store.active.name
+        # Saving lives inside the menu now, so the dot is the only sign of a
+        # divergence from outside it -- without one you could edit, switch
+        # preset and lose the edits without ever having been told.
+        self.preset_button.set_label(f"{name} •" if self._preset_dirty else name)
+        self.preset_button.set_tooltip_text(
+            _("Background Preset — unsaved changes") if self._preset_dirty
+            else _("Background Preset")
+        )
 
     """
     Preset Swatches
@@ -446,6 +465,130 @@ class BackgroundSelector(Adw.Bin):
             return
 
         swatch.set_child(picture)
+
+    """
+    Painting the Preset Button
+    """
+
+    # The gradient is rendered once at roughly the button's own proportions and
+    # then stretched to whatever width the sidebar ends up at.
+    BUTTON_FILL_WIDTH = 320
+    BUTTON_FILL_HEIGHT = 40
+    # Matches is_light_color_hex: 0.299r + 0.587g + 0.114b, out of 255.
+    LIGHT_INK_BELOW = 130
+
+    def _paint_preset_button(self) -> None:
+        """
+        Fill the preset button with the background it names.
+
+        The fill has to land on the button node inside the menubutton, which a
+        provider added to a widget's own style context cannot reach -- so this
+        goes on the display and is swapped out whole each time the selected
+        preset changes.
+        """
+        if self.preset_button is None:
+            return
+
+        display = self.preset_button.get_display()
+        if display is None:
+            return
+
+        if self._button_fill_provider is not None:
+            Gtk.StyleContext.remove_provider_for_display(display, self._button_fill_provider)
+            self._button_fill_provider = None
+
+        css = self._preset_button_css(self.preset_store.active)
+        if not css:
+            # Nothing to preview, so the accent fill in style.css stands.
+            return
+
+        provider = Gtk.CssProvider()
+        provider.load_from_string(css)
+        Gtk.StyleContext.add_provider_for_display(
+            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3
+        )
+        self._button_fill_provider = provider
+
+    def _preset_button_css(self, preset: BackgroundPreset) -> str:
+        fill, luminance = self._preset_button_fill(preset)
+        if fill is None:
+            return ""
+
+        if luminance is not None and luminance >= self.LIGHT_INK_BELOW:
+            ink, shadow = "rgba(0, 0, 0, 0.85)", "0 1px 1px alpha(white, 0.35)"
+        else:
+            ink, shadow = "#ffffff", "0 1px 2px alpha(black, 0.45)"
+
+        return (
+            ".preset-menu-button > button {"
+            f" {fill} color: {ink}; text-shadow: {shadow}; }}"
+        )
+
+    def _preset_button_fill(self, preset: BackgroundPreset) -> tuple[Optional[str], Optional[float]]:
+        """The CSS that paints this preset, and how bright it comes out."""
+        try:
+            if preset.mode == "solid":
+                rgba = hex_to_rgba(
+                    preset.solid.get("color", "#000000"),
+                    float(preset.solid.get("alpha", 1.0)),
+                )
+                fill = f"background-image: none; background-color: {rgba.to_string()};"
+                return fill, self._luminance(parse_rgb_string(preset.solid.get("color", "#000000")))
+
+            if preset.mode == "gradient":
+                background = GradientBackground.from_json(json.dumps(preset.gradient))
+                image = background.prepare_image(
+                    self.BUTTON_FILL_WIDTH, self.BUTTON_FILL_HEIGHT)
+                fill = (
+                    f'background-image: url("{self._png_data_uri(image)}");'
+                    " background-color: transparent;"
+                    " background-size: 100% 100%; background-repeat: no-repeat;"
+                )
+                return fill, self._mean_luminance(image)
+
+            if preset.mode == "image":
+                uri = self._image_css_uri(preset.image.get("file_path") or "")
+                if uri is None:
+                    return None, None
+                # A photograph can be any brightness, and decoding it here just
+                # to find out would mean reading the whole file on every preset
+                # change. A scrim settles it instead: dark enough that white
+                # text always holds, light enough to still read as the image.
+                fill = (
+                    f'background-image: image(alpha(black, 0.32)), url("{uri}");'
+                    " background-color: transparent;"
+                    " background-size: cover, cover;"
+                    " background-position: center, center;"
+                    " background-repeat: no-repeat, no-repeat;"
+                )
+                return fill, None
+        except Exception as error:
+            print(f"Could not paint the preset button for “{preset.name}”: {error}")
+
+        return None, None
+
+    def _image_css_uri(self, file_path: str) -> Optional[str]:
+        if not file_path:
+            return None
+        if file_path.startswith(rootdir):
+            return f"resource://{file_path}"
+        return GLib.filename_to_uri(file_path, None)
+
+    @staticmethod
+    def _png_data_uri(image) -> str:
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, "PNG", optimize=True)
+        return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    @staticmethod
+    def _luminance(rgb: tuple[int, int, int]) -> float:
+        red, green, blue = rgb
+        return 0.299 * red + 0.587 * green + 0.114 * blue
+
+    @classmethod
+    def _mean_luminance(cls, image) -> float:
+        # Averaging by resizing to a single pixel, rather than walking 12,800.
+        return cls._luminance(image.convert("RGB").resize((1, 1)).getpixel((0, 0)))
 
     """
     Preset Actions

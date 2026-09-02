@@ -326,30 +326,27 @@ image.symbolic-circular {
   opacity: 0.7;
 }
 
-/* The preset button is accented so it reads apart from the mode toggles.
+/* The preset button is painted with the background it names -- the fill and the
+   ink that reads against it are set per preset from background_selector.py.
+   What is here is the part that does not change, plus the accent fill as the
+   fallback for a preset that has no background to preview.
    The style class lands on the menubutton node, so reach its child button. */
 .preset-menu-button > button {
   background-color: @accent_bg_color;
   color: @accent_fg_color;
   font-weight: bold;
+  transition: filter 0.2s ease;
 }
 
+/* Brightness rather than an overlay, because an overlay is a background-image
+   and would paint over the preset's own fill. */
 .preset-menu-button > button:hover {
-  background-image: image(alpha(@accent_fg_color, 0.1));
+  filter: brightness(1.08);
 }
 
 .preset-menu-button > button:active,
 .preset-menu-button > button:checked {
-  background-image: image(alpha(@accent_fg_color, 0.2));
-}
-
-/* The save button only exists while the live settings differ from the preset,
-   so it is a plain chip with an accent glyph -- present, but not competing with
-   the filled preset button next to it. */
-.preset-save-button {
-  color: @accent_color;
-  min-width: 32px;
-  min-height: 32px;
+  filter: brightness(0.92);
 }
 
 /* One thumbnail per preset row, painted with that preset's own background.
