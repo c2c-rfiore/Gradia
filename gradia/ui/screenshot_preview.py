@@ -365,8 +365,14 @@ class ScreenshotPreviewStack(Gtk.Window):
             height = self.stack_height or self.get_height()
         else:
             height = self.get_height() or self.stack_height
-        x = geometry.x + SCREEN_MARGIN
-        y = geometry.y + geometry.height - height - SCREEN_MARGIN
+
+        # GTK measures in logical pixels here, monitor geometry and window
+        # height alike, but XMoveWindow takes device pixels. Under XWayland
+        # with native scaling the two differ by the scale factor, and a logical
+        # corner sent as-is lands part-way across the screen at origin.
+        scale = surface.get_scale_factor() or 1
+        x = (geometry.x + SCREEN_MARGIN) * scale
+        y = (geometry.y + geometry.height - height - SCREEN_MARGIN) * scale
 
         # Compared on both axes: monitors side by side share a bottom edge, so
         # moving between them changes x alone.

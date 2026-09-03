@@ -41,12 +41,16 @@ from typing import Optional
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from gradia.backend.logger import Logger
-from gradia.backend.preview_spawner import PREVIEW_ARG
+from gradia.backend.preview_spawner import PREVIEW_ACTION, PREVIEW_ARG
 from gradia.backend.x11_placement import X11Placement
 from gradia.constants import app_id, rootdir  # pyright: ignore
 from gradia.ui.screenshot_preview import ScreenshotPreviewStack
 
 logging = Logger()
+
+# How long an emptied preview process stays up before quitting. While it is up
+# the next screenshot is a bus call away instead of a cold Python and GTK start.
+KEEP_WARM_MS = 10 * 60 * 1000
 
 
 class PreviewApplication(Adw.Application):
@@ -66,6 +70,16 @@ class PreviewApplication(Adw.Application):
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
         self._load_style()
+        self._install_actions()
+        # Windows hold the application; once the last one closes this timer
+        # runs, and a screenshot arriving before it fires cancels it again.
+        self.set_inactivity_timeout(KEEP_WARM_MS)
+
+    def _install_actions(self) -> None:
+        """The editor reaches a running preview through this action, over D-Bus."""
+        action = Gio.SimpleAction.new(PREVIEW_ACTION, GLib.VariantType.new("s"))
+        action.connect("activate", lambda _action, param: self.show_preview(param.get_string()))
+        self.add_action(action)
 
     def _load_style(self) -> None:
         provider = Gtk.CssProvider()
